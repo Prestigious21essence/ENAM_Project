@@ -1,0 +1,34 @@
+{
+  "portfolio": [
+    {"symbol": "TCS",        "bse": "532540", "name": "Tata Consultancy Services", "sector": "IT"},
+    {"symbol": "PERSISTENT", "bse": "533179", "name": "Persistent Systems",        "sector": "IT"},
+    {"symbol": "AFFLE",      "bse": "542752", "name": "Affle 3i", "sector": "Ad-tech"},
+    {"symbol": "HDFCBANK",   "bse": "500180", "name": "HDFC Bank",                 "sector": "Bank"},
+    {"symbol": "SBIN",       "bse": "500112", "name": "State Bank of India",       "sector": "Bank"},
+    {"symbol": "BAJFINANCE", "bse": "500034", "name": "Bajaj Finance",             "sector": "NBFC"},
+    {"symbol": "RELIANCE",   "bse": "500325", "name": "Reliance Industries",       "sector": "Conglomerate"},
+    {"symbol": "TATAPOWER",  "bse": "500400", "name": "Tata Power",                "sector": "Power"},
+    {"symbol": "ITC",        "bse": "500875", "name": "ITC",                       "sector": "FMCG"},
+    {"symbol": "TITAN",      "bse": "500114", "name": "Titan Company",             "sector": "Consumer"},
+    {"symbol": "SUNPHARMA",  "bse": "524715", "name": "Sun Pharma",                "sector": "Pharma"},
+    {"symbol": "APOLLOHOSP", "bse": "508869", "name": "Apollo Hospitals",          "sector": "Healthcare"},
+    {"symbol": "MARUTI",     "bse": "532500", "name": "Maruti Suzuki",             "sector": "Auto"},
+    {"symbol": "LT",         "bse": "500510", "name": "Larsen & Toubro",           "sector": "Infra"},
+    {"symbol": "HAL",        "bse": "541154", "name": "Hindustan Aeronautics",     "sector": "Defence"},
+    {"symbol": "DIXON",      "bse": "540699", "name": "Dixon Technologies",        "sector": "Electronics mfg"},
+    {"symbol": "POLYCAB",    "bse": "542652", "name": "Polycab India",             "sector": "Cables"},
+    {"symbol": "DEEPAKNTR",  "bse": "506401", "name": "Deepak Nitrite",            "sector": "Chemicals"}
+  ],
+  "research": [
+    {"symbol": "ASIANPAINT", "bse": "500820", "name": "Asian Paints"},
+    {"symbol": "PIDILITIND", "bse": "500331", "name": "Pidilite Industries"},
+    {"symbol": "IRCTC",      "bse": "542830", "name": "IRCTC"},
+    {"symbol": "COALINDIA",  "bse": "533278", "name": "Coal India"}
+  ],
+  "settings": {
+    "price_move_pct": 4.0,
+    "volume_multiple": 2.0,
+    "volume_window_days": 20,
+    "alert_categories": ["results", "M&A", "management_change", "fund_raise", "litigation", "pledging", "credit_rating"]
+  }
+}
