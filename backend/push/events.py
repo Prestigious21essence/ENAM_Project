@@ -27,6 +27,7 @@ from datetime import datetime, timedelta
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from db import get_conn
 from ingest.prices import alerts_for_range
+from push.classify import shorten
 from push.mgmt_change import seniority
 
 PORTFOLIO_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "portfolio.json")
@@ -41,7 +42,13 @@ LOW = 1
 
 MINOR_MNA_WORDS = ["incorporat", "extension of timeline", "revised the estimated completion",
                    "amalgamation of its wholly owned subsidiary", "nil consideration"]
-MINOR_FUND_RAISE_WORDS = ["conversion of warrants", "exercise request"]
+DEFAULT_REASONS = {
+    "fund_raise": "new equity or a large raise: affects dilution and the balance sheet",
+    "M&A": "acquisition, merger or stake sale changes what the company owns",
+    "litigation": "legal or regulatory action against the company itself",
+    "pledging": "promoter pledge changed: a risk signal",
+}
+MINOR_FUND_RAISE_WORDS =["conversion of warrants", "exercise request"]
 
 
 def event_kind(category):
@@ -104,11 +111,17 @@ def find_card(conn, table, member_ids):
     return None
 
 
+SENIORITY_RANK = {"top": 3, "board": 2, "other": 1}
+CHANGE_ORDER = {"joining": 0, "role_change": 1, "leaving": 2, "reappointed": 3}
+
+
 def all_mgmt_changes(conn, member_ids):
     """All people changes in the event's cards, each person+change only once
-    (Tata Power filed 3 letters that each list the same 3 directors)."""
-    changes = []
-    seen = []
+    (Tata Power filed 3 letters that each list the same 3 directors).
+    If a person appears twice (HDFC: Bagchi as 'Additional Director', then as
+    'MD & CEO'), keep the more senior role. Order: top people first, joiners first."""
+    by_key = {}
+    keys_in_order = []
     for member_id in member_ids:
         row = conn.execute("SELECT card FROM mgmt_cards WHERE announcement_id = ?",
                            (member_id,)).fetchone()
@@ -117,12 +130,23 @@ def all_mgmt_changes(conn, member_ids):
         for change in json.loads(row[0]).get("changes", []):
             name = change.get("name") or "?"
             key = name.lower().split()[-1] + "|" + str(change.get("change"))
-            if key in seen:
-                continue
-            seen.append(key)
             # recompute with the current rule, so old cards follow rule fixes
             change["seniority"] = seniority(change.get("role"))
-            changes.append(change)
+            if key not in by_key:
+                by_key[key] = change
+                keys_in_order.append(key)
+                continue
+            kept = by_key[key]
+            if SENIORITY_RANK[change["seniority"]] > SENIORITY_RANK[kept["seniority"]]:
+                if not change.get("bio") and kept.get("bio"):
+                    change["bio"] = kept["bio"]
+                    change["bio_source"] = kept.get("bio_source")
+                by_key[key] = change
+
+    changes = []
+    for key in keys_in_order:
+        changes.append(by_key[key])
+    changes.sort(key=lambda c: (-SENIORITY_RANK[c["seniority"]], CHANGE_ORDER.get(c.get("change"), 9)))
     return changes
 
 
@@ -235,10 +259,17 @@ def judge_event(conn, event, settings):
             priority = MEDIUM
             reason = "conversion of warrants approved earlier"
 
+    # Every top item says why it is at the top
+    if priority == HIGH and not reason:
+        reason = DEFAULT_REASONS.get(event["type"], "material filing")
+
+    headline = shorten(headline)      # NSE's own summaries can be a whole paragraph
     if len(event["members"]) > 1:
         headline = headline + " (" + str(len(event["members"])) + " filings)"
 
-    event_id = event["symbol"] + "|" + event["type"] + "|" + event["start_time"].strftime("%Y-%m-%d %H:%M")
+    # URL-friendly id, e.g. "TCS-results-202610141530" ("M&A" -> "MnA")
+    type_slug = event["type"].replace("&", "n")
+    event_id = event["symbol"] + "-" + type_slug + "-" + event["start_time"].strftime("%Y%m%d%H%M")
     return {
         "id": event_id, "symbol": event["symbol"], "type": event["type"],
         "start": event["start_time"].strftime("%Y-%m-%d %H:%M"),

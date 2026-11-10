@@ -1,0 +1,17 @@
+# Render blueprint for the FINN API (free plan).
+# The database (backend/data/finn.db) is refreshed on the laptop and committed:
+# NSE may block cloud servers, and the free plan's disk is reset on every deploy.
+services:
+  - type: web
+    name: finn-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.13
+      - key: GEMINI_API_KEY
+        sync: false        # set by hand in the Render dashboard; never committed

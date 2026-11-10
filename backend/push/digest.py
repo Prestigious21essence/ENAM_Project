@@ -119,11 +119,15 @@ def promote_on_price_moves(alerts):
             event["reason"] = "promoted: stock moved " + describe_alert(alert) + " right after this filing"
 
 
-def get_digest(hours=24):
+def get_digest(hours=24, start=None, end=None):
+    """Digest for [start, end] (datetimes); default: the last `hours` hours."""
     data = load_portfolio()
     settings = data["settings"]
     now = datetime.now()
-    start = now - timedelta(hours=hours)
+    if end is not None:
+        now = end
+    if start is None:
+        start = now - timedelta(hours=hours)
     from_text = start.strftime("%Y-%m-%d %H:%M")
     to_text = now.strftime("%Y-%m-%d %H:%M")
 
@@ -145,6 +149,12 @@ def get_digest(hours=24):
                                        settings["price_move_pct"], settings["volume_multiple"],
                                        settings["volume_window_days"]))
     link_alerts(alerts, linkable_events)
+
+    # The user decides which kinds of news can reach the top (Settings screen)
+    for event in events:
+        if event["priority"] == HIGH and event["type"] not in settings["alert_categories"]:
+            event["priority"] = MEDIUM
+            event["reason"] = "you turned off top alerts for " + event["type"]
 
     high = []
     medium = []

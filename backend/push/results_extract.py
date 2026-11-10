@@ -26,6 +26,7 @@ from llm import call_llm
 from pdf_text import get_pdf_path
 
 MAX_SCANNED_PAGES = 4
+CARD_MODELS = ["gemini-3.5-flash", "gemini-3.8-flash", "gemini-3.5-flash-lite"]
 
 PL_WORDS = ["revenue from operations", "other income", "finance cost", "depreciation",
             "profit before tax", "tax expense", "employee", "total income", "total expenses",
@@ -42,14 +43,17 @@ Return JSON:
  "statement": "consolidated or standalone (what you actually read)",
  "periods": [
   {{"label": "quarter end date as printed",
-   "revenue": "Revenue from operations",
+   "revenue_lines": [the number(s) for Revenue from operations: its total line if printed, otherwise EACH line under it, e.g. sale of products and other operating revenues],
+   "other_income_lines": [every OTHER line that is added into Total income: 'Other income' and any one-off income such as fair value gains. Not other operating revenue],
+   "total_income": "Total income as printed",
    "excise_duty": "Excise duty (an expense line; 0 if none)",
-   "other_income": "Other income",
    "share_of_associates": "Share of profit/(loss) of associates and joint ventures (0 if none)",
    "finance_costs": "Finance costs",
    "depreciation": "Depreciation and amortisation",
-   "exceptional_items": "Exceptional items, positive if it ADDS to profit, negative if a loss",
+   "pbt_before_exceptional": "Profit before exceptional items and tax (same as pbt if there is no such line)",
+   "exceptional_items": "Exceptional items, positive if it ADDS to profit, negative if a loss (an expense or charge is negative)",
    "pbt": "Profit before tax",
+   "total_tax": "Total tax expense",
    "pat": "Profit for the period (after tax)"}}
  ]}}
 """
@@ -151,8 +155,21 @@ def build_metrics(raw, bank):
     for p in raw["periods"][:3]:
         values = {}
         for key in p:
-            if key != "label":
+            if key == "label":
+                continue
+            if isinstance(p[key], list):
+                # the model copies lines, Python adds them up
+                total = 0.0
+                for item in p[key]:
+                    total = total + to_number(item)
+                values[key] = total * factor
+            else:
                 values[key] = to_number(p[key]) * factor
+        # names used below
+        if "revenue_lines" in values:
+            values["revenue"] = values["revenue_lines"]
+        if "other_income_lines" in values:
+            values["other_income"] = values["other_income_lines"]
 
         if bank:
             metrics = {
@@ -178,10 +195,70 @@ def build_metrics(raw, bank):
                 "PBT": values.get("pbt", 0),
                 "PAT": values.get("pat", 0),
             }
+        problems = []
+        if not bank:
+            problems = check_period(values, metrics)
         periods.append({"label": p.get("label"), "metrics": metrics,
                         "exceptional": values.get("exceptional_items", 0),
-                        "excise": values.get("excise_duty", 0)})
+                        "excise": values.get("excise_duty", 0),
+                        "problems": problems})
     return periods
+
+
+def close_enough(a, b, base):
+    return abs(a - b) <= max(0.01 * abs(base), 1.0)
+
+
+def check_period(values, metrics):
+    """Accounting identities that must hold on any P&L. A failure means a number was misread."""
+    problems = []
+    pbt = values.get("pbt", 0)
+    pat = values.get("pat", 0)
+
+    # 1. revenue + other income = total income
+    if values.get("total_income", 0) > 0:
+        if not close_enough(values.get("revenue", 0) + values.get("other_income", 0), values["total_income"], values["total_income"]):
+            problems.append("revenue + other income != total income")
+
+    # 2. profit before exceptional items + exceptional items = PBT (catches sign errors)
+    if values.get("pbt_before_exceptional", 0) != 0:
+        if not close_enough(values["pbt_before_exceptional"] + values.get("exceptional_items", 0), pbt, pbt):
+            problems.append("PBT before exceptional + exceptional != PBT")
+
+    # 3. PBT - tax = PAT (some companies add their associates' share after tax)
+    if values.get("total_tax", 0) != 0:
+        after_tax = pbt - values["total_tax"]
+        with_associates = after_tax + values.get("share_of_associates", 0)
+        if not close_enough(after_tax, pat, pbt) and not close_enough(with_associates, pat, pbt):
+            problems.append("PBT - tax != PAT")
+
+    # 4. a profitable company can't have negative EBITDA
+    if pbt > 0 and metrics["EBITDA"] <= 0:
+        problems.append("EBITDA <= 0 while PBT > 0")
+    return problems
+
+
+# Which headline numbers each failed check makes unreliable
+AFFECTED_BY = {
+    "revenue + other income != total income": ["Revenue", "EBITDA"],
+    "PBT before exceptional + exceptional != PBT": ["EBITDA", "PBT"],
+    "PBT - tax != PAT": ["PBT", "PAT"],
+    "EBITDA <= 0 while PBT > 0": ["EBITDA"],
+}
+
+
+def affected_metrics(period):
+    names = []
+    for problem in period.get("problems", []):
+        names.extend(AFFECTED_BY.get(problem, []))
+    return names
+
+
+def count_problems(periods):
+    total = 0
+    for p in periods:
+        total = total + len(p["problems"])
+    return total
 
 
 def build_card(symbol, announcement_id, pdf_url):
@@ -189,7 +266,7 @@ def build_card(symbol, announcement_id, pdf_url):
     bank = is_bank(doc)
     page_index = find_pl_page(doc, bank)
     if page_index is not None:
-        images = [doc[page_index].get_pixmap(dpi=150).tobytes("png")]
+        images = [doc[page_index].get_pixmap(dpi=200).tobytes("png")]
         page_number = page_index + 1
     else:
         # Scanned filing with no text layer (e.g. Deepak Nitrite): we can't pick the
@@ -210,12 +287,31 @@ def build_card(symbol, announcement_id, pdf_url):
         prompt = COMPANY_PROMPT.format(statement="CONSOLIDATED (or standalone if that is all there is)")
     if len(images) > 1:
         prompt = "The images are several pages of a filing; find the profit and loss table among them.\n" + prompt
-    answer = call_llm(prompt, json_output=True, purpose="results_card", images=images)
-    raw = json.loads(answer)
-    if isinstance(raw, list):          # some models wrap the object in a list
-        raw = raw[0]
-
-    periods = build_metrics(raw, bank)
+    # Numbers matter most here. Ask one model at a time; if its reading fails the
+    # accounting checks, ask the next model. Keep the first clean reading (or the
+    # reading with the fewest problems if none is clean).
+    best = None
+    tried = []
+    for model in CARD_MODELS:
+        try:
+            answer = call_llm(prompt, json_output=True, purpose="results_card", images=images, models=[model])
+            raw = json.loads(answer)
+        except Exception as e:
+            print("  ", symbol, model, "gave no usable answer:", repr(e)[:80])
+            continue
+        if isinstance(raw, list):          # some models wrap the object in a list
+            raw = raw[0]
+        periods = build_metrics(raw, bank)
+        problems = count_problems(periods)
+        tried.append(model + " (" + str(problems) + " problems)")
+        if best is None or problems < best["problems"]:
+            best = {"raw": raw, "periods": periods, "problems": problems, "model": model}
+        if problems == 0:
+            break
+    if best is None:
+        raise RuntimeError("no model could read the results page")
+    raw = best["raw"]
+    periods = best["periods"]
     current = periods[0]
     previous = periods[1]
     year_ago = periods[2]
@@ -223,11 +319,20 @@ def build_card(symbol, announcement_id, pdf_url):
     rows = []
     for name in current["metrics"]:
         value = current["metrics"][name]
+        qoq = pct_change(value, previous["metrics"][name])
+        yoy = pct_change(value, year_ago["metrics"][name])
+        # Never show a comparison built on a number that failed a check
+        unverified = name in affected_metrics(current)
+        if unverified or name in affected_metrics(previous):
+            qoq = None
+        if unverified or name in affected_metrics(year_ago):
+            yoy = None
         rows.append({
             "metric": name,
             "value_cr": round(value, 1),
-            "qoq_pct": pct_change(value, previous["metrics"][name]),
-            "yoy_pct": pct_change(value, year_ago["metrics"][name]),
+            "qoq_pct": qoq,
+            "yoy_pct": yoy,
+            "unverified": unverified,
         })
 
     card = {
@@ -241,7 +346,19 @@ def build_card(symbol, announcement_id, pdf_url):
         "rows": rows,
         "raw_periods": periods,
         "pdf_url": pdf_url,
+        "read_by": best["model"],
+        "models_tried": tried,
     }
+    # If even the best reading breaks an accounting identity, say so on the card
+    # instead of showing a possibly wrong number as fact.
+    if not bank:
+        card["self_check"] = "passed"
+        for p in periods:
+            if len(p["problems"]) > 0:
+                card["self_check"] = "failed"
+                card["warning"] = "Numbers for " + str(p["label"]) + " don't reconcile (" \
+                                  + "; ".join(p["problems"]) + ") - check the PDF."
+
     notes = []
     if current["excise"] != 0:
         notes.append("Revenue is shown net of excise duty (Rs " + str(round(current["excise"], 1))

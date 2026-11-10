@@ -52,12 +52,18 @@ def log_cost(model, input_tokens, output_tokens, purpose):
                          input_tokens, output_tokens, purpose])
 
 
-def call_llm(prompt, json_output=False, purpose="", images=None, temperature=None):
+def call_llm(prompt, json_output=False, purpose="", images=None, temperature=None, models=None):
     """Return the model's text answer for this prompt (cached).
     images: optional list of PNG bytes (e.g. a rendered PDF page).
-    temperature: 0 for classification (same input -> same answer); None = model default."""
+    temperature: 0 for classification (same input -> same answer); None = model default.
+    models: optional own order of models to try (default MODELS)."""
     os.makedirs(CACHE_DIR, exist_ok=True)
     key_text = prompt
+    if models is None:
+        models = MODELS
+    else:
+        # an explicit model choice is part of the question (lets a caller re-ask another model)
+        key_text = key_text + "|models=" + ",".join(models)
     if images:
         for image in images:
             key_text = key_text + hashlib.sha256(image).hexdigest()
@@ -86,11 +92,11 @@ def call_llm(prompt, json_output=False, purpose="", images=None, temperature=Non
     contents.append(prompt)
 
     # Try every model; if ALL are busy (happens at peak times), wait and go round once more.
-    attempts = MODELS + MODELS
+    attempts = models + models
     last_error = None
     for attempt_number in range(len(attempts)):
         model = attempts[attempt_number]
-        if attempt_number == len(MODELS):
+        if attempt_number == len(models):
             print("  all models busy, waiting 20 s and trying again...")
             time.sleep(20)
         try:
