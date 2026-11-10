@@ -52,10 +52,15 @@ def log_cost(model, input_tokens, output_tokens, purpose):
                          input_tokens, output_tokens, purpose])
 
 
-def call_llm(prompt, json_output=False, purpose=""):
-    """Return the model's text answer for this prompt (cached)."""
+def call_llm(prompt, json_output=False, purpose="", images=None):
+    """Return the model's text answer for this prompt (cached).
+    images: optional list of PNG bytes (e.g. a rendered PDF page)."""
     os.makedirs(CACHE_DIR, exist_ok=True)
-    key = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    key_text = prompt
+    if images:
+        for image in images:
+            key_text = key_text + hashlib.sha256(image).hexdigest()
+    key = hashlib.sha256(key_text.encode("utf-8")).hexdigest()
     cache_path = os.path.join(CACHE_DIR, key + ".json")
 
     if os.path.exists(cache_path):
@@ -71,6 +76,12 @@ def call_llm(prompt, json_output=False, purpose=""):
     if json_output:
         config.response_mime_type = "application/json"
 
+    contents = []
+    if images:
+        for image in images:
+            contents.append(types.Part.from_bytes(data=image, mime_type="image/png"))
+    contents.append(prompt)
+
     # Try every model; if ALL are busy (happens at peak times), wait and go round once more.
     attempts = MODELS + MODELS
     last_error = None
@@ -81,7 +92,7 @@ def call_llm(prompt, json_output=False, purpose=""):
             time.sleep(20)
         try:
             response = get_client().models.generate_content(
-                model=model, contents=prompt, config=config)
+                model=model, contents=contents, config=config)
         except Exception as e:
             print("  LLM", model, "failed:", str(e)[:80])
             last_error = e

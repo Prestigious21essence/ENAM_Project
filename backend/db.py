@@ -19,6 +19,12 @@ def get_conn():
             subject TEXT, details TEXT, pdf_url TEXT,
             category TEXT, priority INTEGER, summary TEXT
         )""")
+    # Step 6: one results card per results filing (card = JSON text)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS results_cards (
+            announcement_id TEXT PRIMARY KEY,
+            symbol TEXT, card TEXT
+        )""")
     # Added in Step 5: was this filing classified by a "rule" or by the "llm"?
     try:
         conn.execute("ALTER TABLE announcements ADD COLUMN classified_by TEXT")
