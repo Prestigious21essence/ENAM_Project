@@ -1,6 +1,8 @@
 """Download filing PDFs once (cached on disk) and extract their text."""
 import hashlib
+import io
 import os
+import zipfile
 
 import pymupdf
 import requests
@@ -15,21 +17,35 @@ HEADERS = {
 
 
 def get_pdf_path(url):
-    """Return the local path of the PDF, downloading it the first time."""
+    """Return the local path of the PDF, downloading it the first time.
+    NSE sometimes attaches a .zip instead of a .pdf: then we keep the first PDF inside it."""
     os.makedirs(CACHE_DIR, exist_ok=True)
     name = hashlib.sha1(url.encode("utf-8")).hexdigest() + ".pdf"
     path = os.path.join(CACHE_DIR, name)
     if not os.path.exists(path):
         response = requests.get(url, headers=HEADERS, timeout=30)
         response.raise_for_status()
+        content = response.content
+        if url.lower().endswith(".zip"):
+            content = first_pdf_in_zip(content)
         with open(path, "wb") as f:
-            f.write(response.content)
+            f.write(content)
     return path
+
+
+def first_pdf_in_zip(zip_bytes):
+    archive = zipfile.ZipFile(io.BytesIO(zip_bytes))
+    for member in archive.namelist():
+        if member.lower().endswith(".pdf"):
+            return archive.read(member)
+    raise ValueError("no PDF inside the zip")
 
 
 def get_pdf_text(url, max_pages=None):
     """Return the text of the PDF ('' if it can't be read, e.g. a scanned image)."""
-    if not url or not url.lower().endswith(".pdf"):
+    if not url:
+        return ""
+    if not (url.lower().endswith(".pdf") or url.lower().endswith(".zip")):
         return ""
     try:
         path = get_pdf_path(url)

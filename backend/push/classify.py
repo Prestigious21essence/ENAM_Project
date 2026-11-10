@@ -175,15 +175,17 @@ def get_priority(category, text, about_listed_company=True, minor=False):
 
 
 def shorten(summary):
-    """The cheap model sometimes ignores 'max 20 words': keep the first sentence."""
-    if not summary:
+    """The cheap model sometimes ignores 'max 20 words': keep the first sentence.
+    Only long summaries are cut, and never in the first 60 characters, so titles
+    like "Dr. " or "Mr. " don't end the sentence early."""
+    if not summary or len(summary) <= 200:
         return summary
-    first_sentence = summary.split(". ")[0].strip()
-    if not first_sentence.endswith("."):
-        first_sentence = first_sentence + "."
-    if len(first_sentence) > 200:
-        first_sentence = first_sentence[:197] + "..."
-    return first_sentence
+    cut = summary.find(". ", 60)
+    if cut != -1:
+        summary = summary[:cut + 1]
+    if len(summary) > 200:
+        summary = summary[:197] + "..."
+    return summary
 
 
 # ---------- LLM part ----------
@@ -257,7 +259,7 @@ def classify_with_llm(items):
 
         print("  sending batch of", len(batch), "...")
         try:
-            answer = call_llm(prompt, json_output=True, purpose="classify")
+            answer = call_llm(prompt, json_output=True, purpose="classify", temperature=0)
         except RuntimeError as e:
             # Don't crash the whole run: these filings stay low and are retried next run
             print("  LLM unavailable, skipping this batch:", str(e)[:80])

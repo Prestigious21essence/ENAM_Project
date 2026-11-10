@@ -52,9 +52,10 @@ def log_cost(model, input_tokens, output_tokens, purpose):
                          input_tokens, output_tokens, purpose])
 
 
-def call_llm(prompt, json_output=False, purpose="", images=None):
+def call_llm(prompt, json_output=False, purpose="", images=None, temperature=None):
     """Return the model's text answer for this prompt (cached).
-    images: optional list of PNG bytes (e.g. a rendered PDF page)."""
+    images: optional list of PNG bytes (e.g. a rendered PDF page).
+    temperature: 0 for classification (same input -> same answer); None = model default."""
     os.makedirs(CACHE_DIR, exist_ok=True)
     key_text = prompt
     if images:
@@ -75,6 +76,8 @@ def call_llm(prompt, json_output=False, purpose="", images=None):
     )
     if json_output:
         config.response_mime_type = "application/json"
+    if temperature is not None:
+        config.temperature = temperature
 
     contents = []
     if images:

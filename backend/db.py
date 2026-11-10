@@ -25,6 +25,12 @@ def get_conn():
             announcement_id TEXT PRIMARY KEY,
             symbol TEXT, card TEXT
         )""")
+    # Step 7: one management-change card per filing (card = JSON text)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS mgmt_cards (
+            announcement_id TEXT PRIMARY KEY,
+            symbol TEXT, card TEXT
+        )""")
     # Added in Step 5: was this filing classified by a "rule" or by the "llm"?
     try:
         conn.execute("ALTER TABLE announcements ADD COLUMN classified_by TEXT")
