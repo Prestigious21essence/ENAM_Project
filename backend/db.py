@@ -19,4 +19,9 @@ def get_conn():
             subject TEXT, details TEXT, pdf_url TEXT,
             category TEXT, priority INTEGER, summary TEXT
         )""")
+    # Added in Step 5: was this filing classified by a "rule" or by the "llm"?
+    try:
+        conn.execute("ALTER TABLE announcements ADD COLUMN classified_by TEXT")
+    except sqlite3.OperationalError:
+        pass   # column already exists
     return conn

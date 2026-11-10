@@ -5,3 +5,4 @@ backend/data/finn.db
 backend/data/cache/
 node_modules/
 dist/
+backend/data/cost_log.csv

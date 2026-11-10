@@ -23,6 +23,9 @@ from db import get_conn
 PORTFOLIO_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "portfolio.json")
 SUBJECTS_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "subjects_sample.txt")
 
+# 45 days covers the whole Q2 results season (mid-October to early November)
+DAYS_BACK = 45
+
 BROWSER_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                   "(KHTML, like Gecko) Chrome/124.0 Safari/537.36",
@@ -183,7 +186,7 @@ if __name__ == "__main__":
         portfolio = json.load(f)["portfolio"]
 
     to_date = date.today()
-    from_date = to_date - timedelta(days=14)
+    from_date = to_date - timedelta(days=DAYS_BACK)
 
     session = None
     if only_source != "bse":
