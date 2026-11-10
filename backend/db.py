@@ -31,6 +31,14 @@ def get_conn():
             announcement_id TEXT PRIMARY KEY,
             symbol TEXT, card TEXT
         )""")
+    # Step 8: filings grouped into events (rebuilt on every refresh)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS events (
+            id TEXT PRIMARY KEY,
+            symbol TEXT, type TEXT, start TEXT, end TEXT,
+            priority INTEGER, headline TEXT, reason TEXT,
+            member_ids TEXT, card_type TEXT, card TEXT
+        )""")
     # Added in Step 5: was this filing classified by a "rule" or by the "llm"?
     try:
         conn.execute("ALTER TABLE announcements ADD COLUMN classified_by TEXT")

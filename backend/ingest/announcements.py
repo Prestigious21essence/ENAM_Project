@@ -177,16 +177,13 @@ def save_announcements(items):
     conn.close()
 
 
-if __name__ == "__main__":
-    only_source = None
-    if len(sys.argv) == 2:
-        only_source = sys.argv[1].lower()
-
+def fetch_all(days_back=DAYS_BACK, only_source=None):
+    """Fetch and save announcements for every portfolio company. Returns the items."""
     with open(PORTFOLIO_PATH) as f:
         portfolio = json.load(f)["portfolio"]
 
     to_date = date.today()
-    from_date = to_date - timedelta(days=DAYS_BACK)
+    from_date = to_date - timedelta(days=days_back)
 
     session = None
     if only_source != "bse":
@@ -210,6 +207,15 @@ if __name__ == "__main__":
         time.sleep(1)          # be polite, avoid getting blocked
 
     save_announcements(all_items)
+    return all_items, from_date, to_date
+
+
+if __name__ == "__main__":
+    only_source = None
+    if len(sys.argv) == 2:
+        only_source = sys.argv[1].lower()
+
+    all_items, from_date, to_date = fetch_all(DAYS_BACK, only_source)
 
     counts = Counter()
     for it in all_items:

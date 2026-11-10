@@ -25,6 +25,8 @@ from db import get_conn
 from llm import call_llm
 from pdf_text import get_pdf_path
 
+MAX_SCANNED_PAGES = 4
+
 PL_WORDS = ["revenue from operations", "other income", "finance cost", "depreciation",
             "profit before tax", "tax expense", "employee", "total income", "total expenses",
             "net profit", "interest", "provisions", "operating profit"]
@@ -100,6 +102,8 @@ def find_pl_page(doc, bank):
         if score > best_score:
             best_score = score
             best_page = i
+    if best_score < 4:          # a cover letter mentioning "results" is not a P&L table
+        return None
     return best_page
 
 
@@ -184,17 +188,29 @@ def build_card(symbol, announcement_id, pdf_url):
     doc = pymupdf.open(get_pdf_path(pdf_url))
     bank = is_bank(doc)
     page_index = find_pl_page(doc, bank)
-    if page_index is None:
-        return {"symbol": symbol, "error": "no P&L page found"}
-
-    image = doc[page_index].get_pixmap(dpi=150).tobytes("png")
+    if page_index is not None:
+        images = [doc[page_index].get_pixmap(dpi=150).tobytes("png")]
+        page_number = page_index + 1
+    else:
+        # Scanned filing with no text layer (e.g. Deepak Nitrite): we can't pick the
+        # page by keywords, so send the first few text-less pages and let the model find it.
+        images = []
+        for i in range(len(doc)):
+            if len(doc[i].get_text().strip()) < 50 and len(images) < MAX_SCANNED_PAGES:
+                images.append(doc[i].get_pixmap(dpi=110).tobytes("png"))
+        page_number = "scanned"
+        if len(images) == 0:
+            doc.close()
+            return {"symbol": symbol, "error": "no P&L page found"}
     doc.close()
 
     if bank:
         prompt = BANK_PROMPT
     else:
         prompt = COMPANY_PROMPT.format(statement="CONSOLIDATED (or standalone if that is all there is)")
-    answer = call_llm(prompt, json_output=True, purpose="results_card", images=[image])
+    if len(images) > 1:
+        prompt = "The images are several pages of a filing; find the profit and loss table among them.\n" + prompt
+    answer = call_llm(prompt, json_output=True, purpose="results_card", images=images)
     raw = json.loads(answer)
     if isinstance(raw, list):          # some models wrap the object in a list
         raw = raw[0]
@@ -220,7 +236,7 @@ def build_card(symbol, announcement_id, pdf_url):
         "type": "bank" if bank else "company",
         "statement": raw.get("statement"),
         "unit_in_pdf": raw.get("unit"),
-        "page": page_index + 1,
+        "page": page_number,
         "periods": [current["label"], previous["label"], year_ago["label"]],
         "rows": rows,
         "raw_periods": periods,

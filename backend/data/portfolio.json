@@ -29,6 +29,7 @@
     "price_move_pct": 4.0,
     "volume_multiple": 2.0,
     "volume_window_days": 20,
+    "results_move_pct": 25.0,
     "alert_categories": ["results", "M&A", "management_change", "fund_raise", "litigation", "pledging", "credit_rating"]
   }
 }

@@ -83,6 +83,40 @@ def check_alerts(symbol, price_move_pct=4.0, volume_multiple=2.0, window=20):
     return alerts
 
 
+def alerts_for_range(symbol, from_date, to_date, price_move_pct=4.0, volume_multiple=2.0, window=20):
+    """Like check_alerts, but for every trading day between from_date and to_date
+    (strings 'YYYY-MM-DD'). Used by the digest to show all alerts in a time window."""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT date, close, volume FROM prices WHERE symbol = ? ORDER BY date",
+        (symbol,)).fetchall()
+    conn.close()
+
+    alerts = []
+    for i in range(window, len(rows)):
+        day, close, volume = rows[i]
+        if day < from_date or day > to_date:
+            continue
+        previous_close = rows[i - 1][1]
+        pct_change = (close - previous_close) / previous_close * 100
+
+        previous_volumes = []
+        for r in rows[i - window:i]:
+            previous_volumes.append(r[2])
+        avg_volume = sum(previous_volumes) / len(previous_volumes)
+        volume_ratio = 0
+        if avg_volume > 0:
+            volume_ratio = volume / avg_volume
+
+        if abs(pct_change) >= price_move_pct or volume_ratio >= volume_multiple:
+            alerts.append({"symbol": symbol, "date": day,
+                           "pct_change": round(pct_change, 2),
+                           "volume_ratio": round(volume_ratio, 2),
+                           "price_alert": abs(pct_change) >= price_move_pct,
+                           "volume_alert": volume_ratio >= volume_multiple})
+    return alerts
+
+
 if __name__ == "__main__":
     data = load_portfolio()
     settings = data["settings"]

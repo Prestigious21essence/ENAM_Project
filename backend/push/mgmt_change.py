@@ -33,9 +33,12 @@ MGMT_WORDS = ["appoint", "resign", "cessation", "cease", "retire", "succession",
               "vacat", "designat", "assumed charge", "qualification", "senior management"]
 
 # Seniority is decided in Python from the role, so it is the same on every run
+# Not "executive director": in PSUs (e.g. HAL) that is a below-board title, and it
+# also matches "Non-Executive Director". Board-level executives are "whole-time directors".
 TOP_ROLE_WORDS = ["managing director", "md ", "md&", "ceo", "chief executive", "cfo",
-                  "chief financial", "chairman", "chairperson", "whole-time", "whole time",
-                  "executive director"]
+                  "chief financial", "chairman", "chairperson", "whole-time", "whole time"]
+# A CEO of one division/region/business is senior management, not the company's top job
+DIVISION_WORDS = ["division", "region", "ic head", "business", " - ", " – "]
 
 PROMPT = """This is a stock-exchange filing by {company} about a change in its management or board.
 Use ONLY this text. List every person who joins, leaves, or changes role.
@@ -137,8 +140,15 @@ def find_earlier_bio(symbol, name, before_datetime):
 def seniority(role):
     """top = CEO/MD/CFO/Chairman/whole-time director, board = other directors, other = the rest."""
     text = (role or "").lower() + " "
+    if "chairman" in text or "chairperson" in text:     # often non-executive, still the top job
+        return "top"
+    if "non-executive" in text or "non executive" in text or "independent" in text:
+        return "board"
     for word in TOP_ROLE_WORDS:
         if word in text:
+            for division_word in DIVISION_WORDS:
+                if division_word in text:
+                    return "other"
             return "top"
     if "director" in text:
         return "board"
