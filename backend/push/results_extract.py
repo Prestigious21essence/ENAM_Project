@@ -182,8 +182,18 @@ def build_metrics(raw, bank):
             # EBITDA is rarely printed, so we build it from PBT:
             #   PBT - exceptional items - share of associates (not operating)
             #   + finance costs + depreciation - other income
-            ebitda = (values.get("pbt", 0) - values.get("exceptional_items", 0)
-                      - values.get("share_of_associates", 0)
+            # Some companies (e.g. Sun Pharma) add the associates' share AFTER tax
+            # (PAT = PBT - tax + associates), so it isn't inside PBT: leave it out then.
+            # When PAT = PBT - tax exactly we can't tell from the numbers whether the
+            # share sits inside PBT (ITC) or below PAT (Reliance), so keep the formula.
+            pbt = values.get("pbt", 0)
+            tax = values.get("total_tax", 0)
+            pat = values.get("pat", 0)
+            associates = values.get("share_of_associates", 0)
+            if tax != 0 and associates != 0 and abs(pbt - tax - pat) > 1.0 \
+                    and abs(pbt - tax + associates - pat) <= 1.0:
+                associates = 0
+            ebitda = (pbt - values.get("exceptional_items", 0) - associates
                       + values.get("finance_costs", 0) + values.get("depreciation", 0)
                       - values.get("other_income", 0))
             # Revenue net of excise (e.g. ITC: excise is a pass-through tax that

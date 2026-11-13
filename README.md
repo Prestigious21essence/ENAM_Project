@@ -19,7 +19,9 @@ Yahoo EOD prices ─────────────────────
 - `backend/refresh.py` — the daily job, end to end (prices → filings → classify → cards → events).
 - `backend/api.py` — FastAPI: `/digest`, `/alerts`, `/settings`, `/event/{id}`, `/health/sources`.
 - `frontend/` — React + Tailwind (Vite). Screens: Today, Alerts, Settings, event detail.
-- Models: Gemini Flash (cheap) with a fallback list; every LLM answer is cached on disk and
+- Models: Gemini Flash (cheap) with a fallback list; a model whose daily free quota runs out is
+  skipped for the rest of the run, and text calls fall back to Mistral's free tier as a last
+  resort (image reads of PDF pages stay on Gemini). Every LLM answer is cached on disk and
   logged to `backend/data/cost_log.csv`. Numbers (QoQ, YoY, EBITDA) are computed in Python.
 
 ## Run locally
@@ -29,6 +31,7 @@ cd backend
 python -m venv .venv && .venv\Scripts\activate
 pip install -r requirements.txt
 echo GEMINI_API_KEY=your_key > .env
+echo FALLBACK_API_KEY=your_mistral_key >> .env   # optional: text-only fallback when Gemini's daily quota is gone
 python refresh.py                  # ~10 min cold (Gemini rate limits), seconds when cached
 uvicorn api:app --reload           # http://127.0.0.1:8000
 
