@@ -8,3 +8,5 @@ backend/data/cost_log*.csv
 # OneDrive conflict copies
 *Name clash*
 *Edit conflict*
+.env.*
+.vercel/
