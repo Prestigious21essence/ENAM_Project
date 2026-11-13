@@ -3,6 +3,8 @@
 get_company("TCS") ->
   {"ticker", "name", "statement" ("consolidated" or "standalone"), "url", "fetched_on",
    "quarters", "profit_loss", "balance_sheet", "cash_flow", "ratios",   (tables, see below)
+   "top_ratios": {"Market Cap": ..., "ROE": 51.8, "ROCE": 63.0, ...}   (the list at the top)
+   "growth": {"Compounded Sales Growth": {"5 Years": 9.0, ...}, ...}   (screener's CAGR boxes)
    "documents": {"annual_reports": [{"year", "url", "source"}],
                  "concalls": [{"period", "transcript", "ppt", "rec"}]}}
   or None when screener has no such ticker (404).
@@ -165,6 +167,42 @@ def parse_documents(soup):
     return docs
 
 
+def parse_top_ratios(soup):
+    """The list at the top of the page: {"Market Cap": 876040.0, "ROE": 51.8, "ROCE": 63.0, ...}."""
+    ratios = {}
+    block = soup.find("ul", id="top-ratios")
+    if block is None:
+        return ratios
+    for li in block.find_all("li"):
+        name = li.find("span", class_="name")
+        number = li.find("span", class_="number")
+        if name is None or number is None:
+            continue
+        ratios[name.get_text(" ", strip=True)] = to_number(number.get_text(" ", strip=True))
+    return ratios
+
+
+def parse_growth_tables(soup):
+    """Screener's own CAGR mini-tables next to the P&L:
+    {"Compounded Sales Growth": {"10 Years": 11.0, "5 Years": ..., "3 Years": ..., "TTM": ...},
+     "Compounded Profit Growth": {...}, "Stock Price CAGR": {...}, "Return on Equity": {...}}"""
+    growth = {}
+    section = soup.find("section", id="profit-loss")
+    if section is None:
+        return growth
+    for table in section.find_all("table", class_="ranges-table"):
+        head = table.find("th")
+        if head is None:
+            continue
+        values = {}
+        for tr in table.find_all("tr"):
+            cells = tr.find_all("td")
+            if len(cells) == 2:
+                values[cells[0].get_text(" ", strip=True).rstrip(":")] = to_number(cells[1].get_text(" ", strip=True))
+        growth[head.get_text(" ", strip=True)] = values
+    return growth
+
+
 def has_consolidated(soup):
     """On the consolidated page a company with consolidated statements shows a
     'View Standalone' link; a standalone-only company shows no switch at all."""
@@ -182,6 +220,8 @@ def parse_page(html):
         table = section.find("table") if section is not None else None
         data[key] = parse_table(table) if table is not None else {"columns": [], "rows": {}}
     data["documents"] = parse_documents(soup)
+    data["top_ratios"] = parse_top_ratios(soup)
+    data["growth"] = parse_growth_tables(soup)
     data["consolidated_available"] = has_consolidated(soup)
     return data
 
@@ -231,6 +271,8 @@ def print_company(company):
         print(key, "->", len(table["columns"]), "columns, rows:", list(table["rows"].keys()))
     quarter, values = latest_quarter(company)
     print("latest quarter", quarter, "->", {k: values[k] for k in list(values)[:6]})
+    print("top ratios:", company["top_ratios"])
+    print("growth:", company["growth"])
     docs = company["documents"]
     print("annual reports:", len(docs["annual_reports"]), "e.g.", docs["annual_reports"][:2])
     print("concalls:", len(docs["concalls"]), "e.g.", docs["concalls"][:2])
