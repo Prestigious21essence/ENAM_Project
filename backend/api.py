@@ -109,8 +109,8 @@ def health():
 
 @app.get("/health/sources")
 def health_sources():
-    """Can THIS server reach NSE and BSE? (NSE often blocks cloud IPs.)
-    Makes one small request to each, for TCS over the last 14 days.
+    """Can THIS server reach NSE, BSE and screener.in? (exchanges may block cloud IPs.)
+    Makes one small request to each, for TCS (filings over the last 14 days).
     This one deliberately uses the real clock: it tests live reachability today,
     not the snapshot (the digest windows end at data_as_of instead)."""
     from ingest.announcements import fetch_bse, fetch_nse, make_nse_session
@@ -136,6 +136,17 @@ def health_sources():
     except Exception as e:
         result["bse"] = {"ok": False, "error": repr(e)[:200]}
     result["bse"]["seconds"] = round(time.time() - started, 1)
+
+    # screener.in (pull side): a live fetch, not the daily cache
+    from ingest.screener import get_company, latest_quarter
+    started = time.time()
+    try:
+        company = get_company("TCS", use_cache=False)
+        quarter, values = latest_quarter(company)
+        result["screener"] = {"ok": True, "latest_quarter": quarter, "sales": values.get("Sales")}
+    except Exception as e:
+        result["screener"] = {"ok": False, "error": repr(e)[:200]}
+    result["screener"]["seconds"] = round(time.time() - started, 1)
     return result
 
 
