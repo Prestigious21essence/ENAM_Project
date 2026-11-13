@@ -23,6 +23,15 @@ function todayText() {
   return new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })
 }
 
+// "2026-11-10 12:58" -> "Tuesday, 10 November, 12:58". The brief's windows end at the
+// latest data (the deployed database is a snapshot), so say which moment it describes.
+function asOfText(asOf) {
+  if (!asOf) return ''
+  const day = new Date(asOf.slice(0, 10) + 'T00:00:00')
+  const dayText = day.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })
+  return dayText + ', ' + asOf.slice(11, 16)
+}
+
 export default function Today({ onOpen }) {
   const [hours, setHours] = useState(24)
   const [digest, setDigest] = useState(null)
@@ -63,7 +72,9 @@ export default function Today({ onOpen }) {
       <header className="px-4 pt-6 pb-3">
         <div className="text-xs font-semibold tracking-[0.2em] text-sky-700 dark:text-sky-400">FINN</div>
         <h1 className="mt-1 text-2xl font-bold tracking-tight">{greeting()}</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">{todayText()}</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          {digest ? 'Brief as of ' + asOfText(digest.data_as_of.as_of) : todayText()}
+        </p>
       </header>
 
       <div className="no-scrollbar flex gap-2 overflow-x-auto px-4 pb-3">
@@ -140,7 +151,7 @@ function Summary({ digest }) {
 }
 
 function QuietDay({ hours, highlights, onOpen }) {
-  const label = hours === 24 ? 'the last 24 hours' : 'this window'
+  const label = hours === 24 ? 'the last 24 hours of data' : 'this window'
   return (
     <div className="space-y-3">
       <div className="rounded-2xl bg-white p-4 text-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">

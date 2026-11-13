@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from db import get_conn
 from ingest.prices import alerts_for_range
-from push.digest import biggest_move, describe_alert, get_digest
+from push.digest import biggest_move, data_as_of, describe_alert, get_digest
 from push.events import build_events
 
 PORTFOLIO_PATH = os.path.join(os.path.dirname(__file__), "data", "portfolio.json")
@@ -100,14 +100,6 @@ def clean_event(event, names):
             "filings": event["filings"], "market": market}
 
 
-def data_as_of():
-    conn = get_conn()
-    filings = conn.execute("SELECT MAX(datetime) FROM announcements").fetchone()[0]
-    prices = conn.execute("SELECT MAX(date) FROM prices").fetchone()[0]
-    conn.close()
-    return {"filings": filings, "prices": prices}
-
-
 # ---------- endpoints ----------
 
 @app.get("/health")
@@ -118,7 +110,9 @@ def health():
 @app.get("/health/sources")
 def health_sources():
     """Can THIS server reach NSE and BSE? (NSE often blocks cloud IPs.)
-    Makes one small request to each, for TCS over the last 14 days."""
+    Makes one small request to each, for TCS over the last 14 days.
+    This one deliberately uses the real clock: it tests live reachability today,
+    not the snapshot (the digest windows end at data_as_of instead)."""
     from ingest.announcements import fetch_bse, fetch_nse, make_nse_session
     import time
 

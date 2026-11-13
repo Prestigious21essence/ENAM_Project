@@ -119,11 +119,38 @@ def promote_on_price_moves(alerts):
             event["reason"] = "promoted: stock moved " + describe_alert(alert) + " right after this filing"
 
 
+def data_as_of():
+    """Latest filing time and latest price day in the database, plus `as_of`:
+    the moment the data ends. The deployed database is a snapshot refreshed on a
+    laptop, so windows like "last 24 hours" must end here, not at the clock time,
+    or a snapshot opened days later would look empty."""
+    conn = get_conn()
+    filings = conn.execute("SELECT MAX(datetime) FROM announcements").fetchone()[0]
+    prices = conn.execute("SELECT MAX(date) FROM prices").fetchone()[0]
+    conn.close()
+
+    candidates = []
+    if filings:
+        candidates.append(filings[:16])
+    if prices:
+        candidates.append(prices[:10] + " 23:59")   # EOD price: known by end of that day
+    if candidates:
+        as_of = max(candidates)
+    else:
+        as_of = datetime.now().strftime("%Y-%m-%d %H:%M")
+    return {"filings": filings, "prices": prices, "as_of": as_of}
+
+
+def latest_data_time():
+    return datetime.strptime(data_as_of()["as_of"], "%Y-%m-%d %H:%M")
+
+
 def get_digest(hours=24, start=None, end=None):
-    """Digest for [start, end] (datetimes); default: the last `hours` hours."""
+    """Digest for [start, end] (datetimes); default: the `hours` hours up to the
+    latest data in the database (see data_as_of)."""
     data = load_portfolio()
     settings = data["settings"]
-    now = datetime.now()
+    now = latest_data_time()
     if end is not None:
         now = end
     if start is None:

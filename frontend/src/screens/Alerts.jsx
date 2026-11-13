@@ -41,6 +41,11 @@ export default function Alerts({ onOpen, onSettings }) {
             <span className="text-sky-700 dark:text-sky-400">change</span>
           </button>
         )}
+        {data && (
+          <p className="mt-1 text-xs text-slate-400">
+            As of {shortDate(data.data_as_of.prices)} close · last {days} days up to the latest data
+          </p>
+        )}
       </header>
 
       <div className="flex gap-2 px-4 pb-3">

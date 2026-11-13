@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { onWakeChange } from './api'
 import Alerts from './screens/Alerts'
 import EventDetail from './screens/EventDetail'
 import Settings from './screens/Settings'
@@ -22,6 +23,13 @@ const TABS = [
 export default function App() {
   const [route, setRoute] = useState(readRoute())
 
+  const [waking, setWaking] = useState(false)
+
+  useEffect(() => {
+    onWakeChange(setWaking)
+    return () => onWakeChange(null)
+  }, [])
+
   useEffect(() => {
     function onHashChange() {
       setRoute(readRoute())
@@ -41,6 +49,7 @@ export default function App() {
 
   return (
     <div className="mx-auto min-h-screen max-w-md pb-20">
+      {waking && <WakingBanner />}
       {route.screen === 'today' && <Today onOpen={openEvent} />}
       {route.screen === 'alerts' && <Alerts onOpen={openEvent} onSettings={() => (window.location.hash = '#/settings')} />}
       {route.screen === 'settings' && <Settings />}
@@ -63,6 +72,21 @@ export default function App() {
           })}
         </div>
       </nav>
+    </div>
+  )
+}
+
+// Shown while the first request is slow: the free server sleeps when idle.
+function WakingBanner() {
+  return (
+    <div className="sticky top-0 z-30 mx-4 mt-3 flex items-center gap-3 rounded-2xl bg-amber-50 p-3 text-sm text-amber-900 ring-1 ring-amber-200 dark:bg-amber-950 dark:text-amber-100 dark:ring-amber-900">
+      <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-amber-400 border-t-transparent" />
+      <div>
+        <div className="font-semibold">Waking up the server…</div>
+        <div className="text-xs text-amber-800/80 dark:text-amber-200/80">
+          The free server sleeps when idle. The first load can take up to a minute; after that it's instant.
+        </div>
+      </div>
     </div>
   )
 }
