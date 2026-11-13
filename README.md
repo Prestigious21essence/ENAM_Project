@@ -22,7 +22,7 @@ Yahoo EOD prices ─────────────────────
   ratios) and document links (annual reports, concall transcripts/PPTs) for any NSE ticker;
   raw HTML cached one fetch per ticker per day. `push/results_check.py` cross-checks every
   results card's revenue and PAT against screener's quarterly table (flags > 2% off).
-- `backend/pull/numbers.py` — pull side, no LLM: snapshot, trajectory (CAGR), balance sheet
+- `backend/pull/financials.py` — pull side, no LLM: snapshot, trajectory (CAGR), balance sheet
   and cash-quality sections for any ticker, every number with its screener table/row/column,
   one rule-based takeaway per section; bank/NBFC variant.
 - `frontend/` — React + Tailwind (Vite). Screens: Today, Alerts, Settings, event detail.

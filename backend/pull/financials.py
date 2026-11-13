@@ -1,4 +1,4 @@
-"""Numeric research sections for any NSE ticker, from screener's tables. No LLM.
+﻿"""Numeric research sections for any NSE ticker, from screener's tables. No LLM.
 
 build_numbers("TCS") ->
   {"ticker", "name", "statement", "finance" (bank/NBFC layout?), "url", "fetched_on",
@@ -13,7 +13,7 @@ All maths (CAGR, D/E, CFO/PAT, cumulative sums) is done here in Python.
 Banks and NBFCs come in screener's finance layout (Revenue / Interest / Financing Profit,
 no OPM, no working-capital days): those sections use what screener gives instead.
 
-Usage:  python pull\\numbers.py TCS HDFCBANK ASIANPAINT SHAILY
+Usage:  python pull\\financials.py TCS HDFCBANK ASIANPAINT SHAILY
 """
 import json
 import os
@@ -125,13 +125,11 @@ def build_snapshot(c, finance):
     for column, period in [(fy, fy_name), (ttm, "TTM")]:
         if column is None:
             continue
-        metrics.append(metric("Revenue", cell(pl, sales_row, column), "Rs cr", period, "profit_loss", sales_row, column, url, 0))
+        metrics.append(metric("Interest earned" if finance else "Revenue", cell(pl, sales_row, column), "Rs cr", period, "profit_loss", sales_row, column, url, 0))
         if finance:
-            nii = None
-            if cell(pl, "Revenue", column) is not None and cell(pl, "Interest", column) is not None:
-                nii = cell(pl, "Revenue", column) - cell(pl, "Interest", column)
-            metrics.append(metric("Net interest income", nii, "Rs cr", period, "profit_loss", "Revenue - Interest", column, url, 0))
-            metrics.append(metric("Financing margin", cell(pl, "Financing Margin %", column), "%", period, "profit_loss", "Financing Margin %", column, url))
+            # screener's "Financing Margin %" is its own construct (negative for HDFC Bank after
+            # the merger) and would mislead a reader, so it is not shown.
+            metrics.append(metric("Net interest income", nii_value(pl, column), "Rs cr", period, "profit_loss", "Revenue - Interest", column, url, 0))
         else:
             metrics.append(metric("Operating margin (OPM)", cell(pl, "OPM %", column), "%", period, "profit_loss", "OPM %", column, url))
         metrics.append(metric("Net profit (PAT)", cell(pl, "Net Profit", column), "Rs cr", period, "profit_loss", "Net Profit", column, url, 0))
@@ -157,7 +155,7 @@ def build_snapshot(c, finance):
     roe_value = roe if roe is not None else c["top_ratios"].get("ROE")
     parts = []
     if sales_fy is not None:
-        parts.append(fy_name + " revenue Rs " + "{:,.0f}".format(sales_fy) + " cr")
+        parts.append(fy_name + (" interest earned Rs " if finance else " revenue Rs ") + "{:,.0f}".format(sales_fy) + " cr")
         if sales_ttm is not None and pct(sales_ttm, sales_fy) is not None:
             parts[-1] = parts[-1] + ", TTM " + signed(pct(sales_ttm, sales_fy)) + "% vs " + fy_name
     if pat_fy is not None:
@@ -182,6 +180,27 @@ def signed(x):
     return ("+" if x >= 0 else "") + str(x)
 
 
+def nii_value(pl, column):
+    """Net interest income = screener's Revenue (interest earned) - Interest (expended)."""
+    revenue = cell(pl, "Revenue", column)
+    interest = cell(pl, "Interest", column)
+    if revenue is None or interest is None:
+        return None
+    return revenue - interest
+
+
+def biggest_jump(years, values):
+    """(FY label, growth %) of the largest one-year rise in a series; (None, None) if nothing."""
+    best_year = None
+    best_pct = None
+    for i in range(1, len(values)):
+        growth = pct(values[i], values[i - 1])
+        if growth is not None and (best_pct is None or growth > best_pct):
+            best_year = years[i]
+            best_pct = growth
+    return best_year, best_pct
+
+
 # ---------- section 2: trajectory ----------
 
 def build_trajectory(c, finance):
@@ -189,27 +208,41 @@ def build_trajectory(c, finance):
     url = c["url"]
     years = fy_columns(pl)
     sales_row = "Revenue" if finance else "Sales"
-    margin_row = "Financing Margin %" if finance else "OPM %"
+    sales_label = "Interest earned" if finance else "Revenue"
     sales = [cell(pl, sales_row, y) for y in years]
     profit = [cell(pl, "Net Profit", y) for y in years]
-    margin = [cell(pl, margin_row, y) for y in years]
+    # Finance companies: NII instead of a margin (screener's financing margin misleads)
+    nii = [nii_value(pl, y) for y in years] if finance else None
+    margin = None if finance else [cell(pl, "OPM %", y) for y in years]
     metrics = []
     for n in (3, 5):
         if len(years) > n:
             end, start = years[-1], years[-1 - n]
             span = start + " to " + end
-            metrics.append(metric("Revenue CAGR " + str(n) + "y", cagr(sales[-1], sales[-1 - n], n), "%", span, "profit_loss", sales_row, span, url))
+            metrics.append(metric(sales_label + " CAGR " + str(n) + "y", cagr(sales[-1], sales[-1 - n], n), "%", span, "profit_loss", sales_row, span, url))
+            if finance:
+                metrics.append(metric("NII CAGR " + str(n) + "y", cagr(nii[-1], nii[-1 - n], n), "%", span, "profit_loss", "Revenue - Interest", span, url))
             metrics.append(metric("Profit CAGR " + str(n) + "y", cagr(profit[-1], profit[-1 - n], n), "%", span, "profit_loss", "Net Profit", span, url))
         else:
-            metrics.append(metric("Revenue CAGR " + str(n) + "y", None, "%", "needs " + str(n + 1) + " years", "profit_loss", sales_row, NA, url))
+            metrics.append(metric(sales_label + " CAGR " + str(n) + "y", None, "%", "needs " + str(n + 1) + " years", "profit_loss", sales_row, NA, url))
+            if finance:
+                metrics.append(metric("NII CAGR " + str(n) + "y", None, "%", "needs " + str(n + 1) + " years", "profit_loss", "Revenue - Interest", NA, url))
             metrics.append(metric("Profit CAGR " + str(n) + "y", None, "%", "needs " + str(n + 1) + " years", "profit_loss", "Net Profit", NA, url))
-    last3 = margin[-3:]
-    margin_dir = direction(last3, 1.0)
-    span3 = (years[-3] + " to " + years[-1]) if len(years) >= 3 else NA
-    metrics.append({"label": "Margin direction (" + ("financing margin" if finance else "OPM") + ", 3 yrs)",
-                    "value": margin_dir if margin_dir else NA, "unit": "", "period": span3,
-                    "source": {"table": "profit_loss", "row": margin_row, "column": span3, "url": url}})
-    metrics.append(metric("Latest margin", margin[-1] if margin else None, "%", fy_label(years[-1]) if years else NA, "profit_loss", margin_row, years[-1] if years else NA, url))
+    margin_dir = None
+    if not finance:
+        margin_dir = direction(margin[-3:], 1.0)
+        span3 = (years[-3] + " to " + years[-1]) if len(years) >= 3 else NA
+        metrics.append({"label": "Margin direction (OPM, 3 yrs)", "value": margin_dir if margin_dir else NA, "unit": "",
+                        "period": span3, "source": {"table": "profit_loss", "row": "OPM %", "column": span3, "url": url}})
+        metrics.append(metric("Latest OPM", margin[-1] if margin else None, "%", fy_label(years[-1]) if years else NA, "profit_loss", "OPM %", years[-1] if years else NA, url))
+
+    # A one-year jump of more than 40% is usually an acquisition or merger, not organic growth
+    jump_year, jump_pct = biggest_jump(years, sales)
+    jump_note = None
+    if jump_pct is not None and jump_pct > 40:
+        jump_note = ("includes a one-year jump of " + str(jump_pct) + "% in " + fy_label(jump_year)
+                     + " (acquisition or merger?): check the annual report")
+        metrics.append(metric("One-year " + sales_label.lower() + " jump", jump_pct, "%", fy_label(jump_year), "profit_loss", sales_row, jump_year, url))
 
     # takeaway
     s5 = cagr(sales[-1], sales[-6], 5) if len(years) > 5 else None
@@ -219,20 +252,31 @@ def build_trajectory(c, finance):
     horizon, s, p = (5, s5, p5) if s5 is not None else (3, s3, p3)
     parts = []
     if s is not None:
-        parts.append("Revenue grew " + str(s) + "% a year over " + str(horizon) + " years")
+        parts.append(sales_label + " grew " + str(s) + "% a year over " + str(horizon) + " years")
+        if finance and len(years) > horizon:
+            n_cagr = cagr(nii[-1], nii[-1 - horizon], horizon)
+            if n_cagr is not None:
+                parts.append("NII " + str(n_cagr) + "% a year")
         if p is not None:
             parts.append("profit " + str(p) + "% a year")
             if p > s + 2:
-                parts.append("profit outpacing revenue")
+                parts.append("profit outpacing " + sales_label.lower())
             elif p < s - 2:
-                parts.append("profit lagging revenue")
+                parts.append("profit lagging " + sales_label.lower())
     elif p is not None:
         parts.append("Profit grew " + str(p) + "% a year over " + str(horizon) + " years")
     if margin_dir is not None:
         parts.append("margins " + margin_dir + " over 3 years")
+    if jump_note is not None:
+        parts.append(jump_note)
     takeaway = "; ".join(parts) if parts else "Not enough yearly data for a trend."
-    series = {"years": [fy_label(y) for y in years], "revenue": sales, "net_profit": profit, "margin_pct": margin,
-              "margin_name": margin_row, "source": {"table": "profit_loss", "url": url}}
+    series = {"years": [fy_label(y) for y in years], "revenue": sales, "revenue_name": sales_label,
+              "net_profit": profit, "source": {"table": "profit_loss", "url": url}}
+    if finance:
+        series["nii"] = nii
+    else:
+        series["margin_pct"] = margin
+        series["margin_name"] = "OPM %"
     return {"id": "trajectory", "title": "Trajectory", "takeaway": takeaway, "metrics": metrics, "series": series}
 
 
@@ -416,7 +460,9 @@ def print_numbers(result):
                   "| src:", m["source"]["table"] + " / " + m["source"]["row"] + " / " + str(m["source"]["column"]))
         if "series" in section and "revenue" in section["series"]:
             s = section["series"]
-            print("   series:", list(zip(s["years"], s["revenue"], s["net_profit"], s["margin_pct"])))
+            third = s["nii"] if "nii" in s else s["margin_pct"]
+            print("   series (year, " + s["revenue_name"].lower() + ", profit, " + ("nii" if "nii" in s else "opm") + "):",
+                  list(zip(s["years"], s["revenue"], s["net_profit"], third)))
     g = result["screener_cagr"]
     if g:
         print("\n   screener's own CAGR boxes (for checking):", {k: g[k] for k in g if "Growth" in k})
