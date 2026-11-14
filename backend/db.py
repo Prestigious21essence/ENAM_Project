@@ -39,6 +39,12 @@ def get_conn():
             priority INTEGER, headline TEXT, reason TEXT,
             member_ids TEXT, card_type TEXT, card TEXT
         )""")
+    # M7: pull-side research, one row per ticker and stage (json = that stage's result)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS research (
+            ticker TEXT, stage TEXT, status TEXT, json TEXT, updated_at TEXT,
+            PRIMARY KEY (ticker, stage)
+        )""")
     # Added in Step 5: was this filing classified by a "rule" or by the "llm"?
     try:
         conn.execute("ALTER TABLE announcements ADD COLUMN classified_by TEXT")

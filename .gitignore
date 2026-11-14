@@ -10,3 +10,4 @@ backend/data/cost_log*.csv
 *Edit conflict*
 .env.*
 .vercel/
+.claude/

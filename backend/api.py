@@ -9,6 +9,7 @@ Endpoints:
   GET  /settings
   POST /settings                   body: any of the settings fields
   GET  /event/{event_id}
+  GET  /research/{ticker}          pull side: starts a background build, returns what's ready
 """
 import json
 import os
@@ -21,6 +22,7 @@ from db import get_conn
 from ingest.prices import alerts_for_range
 from push.digest import biggest_move, data_as_of, describe_alert, get_digest
 from push.events import build_events
+from pull.research import get_research, start_research, valid_ticker
 
 PORTFOLIO_PATH = os.path.join(os.path.dirname(__file__), "data", "portfolio.json")
 
@@ -276,3 +278,28 @@ def get_event(event_id: str):
             "type": row[2], "start": row[3], "end": row[4], "priority": row[5],
             "headline": row[6], "reason": row[7], "card_type": row[9], "card": card,
             "filings": filings, "market_moves": moves}
+
+
+@app.get("/research/{ticker}")
+def research(ticker: str):
+    """Research for any NSE ticker. The first call fetches screener and returns the numbers
+    (seconds) while the transcript and LLM stages build in a background thread; later calls
+    return whatever is ready; a finished ticker comes straight from the DB. If the daily LLM
+    quota is gone, the LLM stages say waiting_quota and the numbers still show. Never a 500."""
+    ticker = ticker.upper().strip()
+    if not valid_ticker(ticker):
+        raise HTTPException(status_code=404, detail="not an NSE ticker: " + ticker)
+    result = get_research(ticker)
+    if result is None or result["status"] not in ("done", "not_found"):
+        try:
+            known = start_research(ticker)
+        except Exception as e:
+            # screener unreachable or similar: say so instead of failing
+            return {"ticker": ticker, "status": "error", "progress": "Could not reach screener.in: " + repr(e)[:120],
+                    "stages": {}, "sections": {}}
+        if not known:
+            raise HTTPException(status_code=404, detail=ticker + " is not listed on screener.in (check the NSE symbol)")
+        result = get_research(ticker)
+    if result["status"] == "not_found":
+        raise HTTPException(status_code=404, detail=ticker + " is not listed on screener.in (check the NSE symbol)")
+    return result

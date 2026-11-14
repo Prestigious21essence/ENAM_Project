@@ -17,7 +17,11 @@ Yahoo EOD prices ─────────────────────
 ```
 
 - `backend/refresh.py` — the daily job, end to end (prices → filings → classify → cards → events).
-- `backend/api.py` — FastAPI: `/digest`, `/alerts`, `/settings`, `/event/{id}`, `/health/sources`.
+- `backend/api.py` — FastAPI: `/digest`, `/alerts`, `/settings`, `/event/{id}`, `/health/sources`,
+  and `/research/{ticker}` (pull side: the first call returns the numbers in about a second and
+  builds the transcript, guidance and scorecard stages in a background thread; later calls return
+  what is ready; finished research is served from `finn.db`; when the daily LLM quota is gone the
+  LLM stages report `waiting_quota` instead of failing). `pull/research.py` holds the stages.
 - `backend/ingest/screener.py` — screener.in tables (quarterly, P&L, balance sheet, cash flow,
   ratios) and document links (annual reports, concall transcripts/PPTs) for any NSE ticker;
   raw HTML cached one fetch per ticker per day. `push/results_check.py` cross-checks every
