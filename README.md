@@ -29,6 +29,11 @@ Yahoo EOD prices ─────────────────────
   filings as fallback), text per page cached by URL; the real quarter is read from the text.
 - `backend/pull/guidance.py` — management's forward guidance per transcript (cheap model,
   one call per call); every quote is verified verbatim against the cited page in Python or dropped.
+- `backend/pull/promises.py` — promised vs delivered: promises grouped into threads with the
+  target's movement (reiterated / raised / lowered / dropped), actuals from later transcripts
+  (company definitions, verified quotes) or screener where definitions match, Python decides
+  whether the period is over and compares, the stronger model writes one cited verdict per
+  thread, and a scorecard with a rule-based credibility line.
 - `frontend/` — React + Tailwind (Vite). Screens: Today, Alerts, Settings, event detail.
 - Models: Gemini Flash (cheap) with a fallback list; a model whose daily free quota runs out is
   skipped for the rest of the run, and text calls fall back to Mistral's free tier as a last

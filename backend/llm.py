@@ -126,6 +126,21 @@ def call_fallback(prompt, json_output, temperature):
     return text, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
 
 
+def answer_model(prompt, images=None, models=None):
+    """Which model wrote the cached answer to this prompt (None if not cached)."""
+    key_text = prompt
+    if models is not None:
+        key_text = key_text + "|models=" + ",".join(models)
+    if images:
+        for image in images:
+            key_text = key_text + hashlib.sha256(image).hexdigest()
+    path = os.path.join(CACHE_DIR, hashlib.sha256(key_text.encode("utf-8")).hexdigest() + ".json")
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as f:
+        return json.load(f).get("model")
+
+
 def call_llm(prompt, json_output=False, purpose="", images=None, temperature=None, models=None):
     """Return the model's text answer for this prompt (cached).
     images: optional list of PNG bytes (e.g. a rendered PDF page).
