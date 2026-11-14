@@ -25,6 +25,10 @@ Yahoo EOD prices ─────────────────────
 - `backend/pull/financials.py` — pull side, no LLM: snapshot, trajectory (CAGR), balance sheet
   and cash-quality sections for any ticker, every number with its screener table/row/column,
   one rule-based takeaway per section; bank/NBFC variant.
+- `backend/pull/docs.py` — the last 4–5 concall transcripts per ticker (screener links, NSE
+  filings as fallback), text per page cached by URL; the real quarter is read from the text.
+- `backend/pull/guidance.py` — management's forward guidance per transcript (cheap model,
+  one call per call); every quote is verified verbatim against the cited page in Python or dropped.
 - `frontend/` — React + Tailwind (Vite). Screens: Today, Alerts, Settings, event detail.
 - Models: Gemini Flash (cheap) with a fallback list; a model whose daily free quota runs out is
   skipped for the rest of the run, and text calls fall back to Mistral's free tier as a last
