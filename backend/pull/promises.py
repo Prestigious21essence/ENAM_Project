@@ -506,7 +506,7 @@ def write_verdict(company_name, thread):
     # a promise with no finished period can never be "missed"
     if verdict == "missed" and not any(p["period_over"] for p in thread["promises"]):
         verdict = "behind"
-    return verdict, sentence
+    return verdict, sentence, model
 
 
 def thread_python_verdict(thread):
