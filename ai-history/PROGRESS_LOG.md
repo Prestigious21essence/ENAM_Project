@@ -660,3 +660,9 @@ Independent read-only audit (script: `ENAM AI/audit_research_reviewer.py`, run o
 - **One cosmetic leftover:** multi-person management headlines are cut mid-phrase ("…CarbonLite Solutions…", "Sarada Prasana Nayak as…"). Fix: "<first change> + N more". Bundled with F1.
 - **Verdict: ready to ship.** Next: M9d (headline) + F1 (AI history) → the reviewer checks the redaction → WRITEUP.md → push + tag `submission` → live check → send.
 
+### 2026-11-15 19:45 — Review of F1 + submission prep (reviewer chat)
+- **F1 verdict: pass.** `ai-history/claude-code/` has all 4 Claude Code sessions as markdown, **10 Nov 15:52 → 15 Nov 19:28 IST** (Steps 1–8 from the first account; M1–M10, M9b–M9d and F1 from this one). Secret check by the reviewer: the real `GEMINI_API_KEY` value appears **0 times**, and there are **0** `AIza…` strings. 11 files tracked.
+- **Decision (Shubhankur): no share links for the chats; the Claude Code sessions and the progress log are the history.** So: `links.md` (empty placeholder rows) was replaced by `ai-history/OTHER_AI_TOOLS.md` (the Claude planning/review chats, Antigravity and the Gemini API, and where their work is recorded); `ai-history/README.md` now says "separate Claude chats were used to plan each step and to review/audit its output… recorded in PROGRESS_LOG.md"; the writeup says the same and no longer promises links.
+- **Final writeup:** `ENAM AI/WRITEUP_FINAL.md` → copied to `finn/WRITEUP.md` in the final push.
+- **Left:** final push + tag `submission` (Antigravity) → live check (reviewer) → repo public → phone check → send.
+
