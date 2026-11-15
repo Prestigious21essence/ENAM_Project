@@ -1,4 +1,4 @@
-﻿"""Numeric research sections for any NSE ticker, from screener's tables. No LLM.
+"""Numeric research sections for any NSE ticker, from screener's tables. No LLM.
 
 build_numbers("TCS") ->
   {"ticker", "name", "statement", "finance" (bank/NBFC layout?), "url", "fetched_on",
@@ -17,6 +17,7 @@ Usage:  python pull\\financials.py TCS HDFCBANK ASIANPAINT SHAILY
 """
 import json
 import os
+import re
 import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
@@ -28,12 +29,21 @@ NA = "n/a"
 # ---------- small helpers (every one tolerates missing data) ----------
 
 def fy_columns(table):
-    """Year columns of a P&L / cash-flow / ratios table, without the TTM column."""
+    """12-month financial-year columns of a P&L / cash-flow / ratios table: no TTM, and no
+    changed-year-end columns such as screener's "Mar 2016 18m" (MRF), which would turn an
+    18-month year into a fake growth jump."""
     columns = []
     for c in table["columns"]:
-        if c != "TTM":
+        if re.fullmatch(r"[A-Z][a-z]{2} \d{4}", c):
             columns.append(c)
     return columns
+
+
+def column_year(column):
+    try:
+        return int(column.split()[1])
+    except (IndexError, ValueError):
+        return None
 
 
 def cell(table, row, column):
@@ -189,16 +199,31 @@ def nii_value(pl, column):
     return revenue - interest
 
 
-def biggest_jump(years, values):
-    """(FY label, growth %) of the largest one-year rise in a series; (None, None) if nothing."""
+def biggest_jump(years, values, window=5):
+    """(FY column, growth %) of the largest one-year rise inside the CAGR window (the last
+    `window` years), counting only pairs of consecutive 12-month years."""
     best_year = None
     best_pct = None
-    for i in range(1, len(values)):
+    start = max(1, len(values) - window)
+    for i in range(start, len(values)):
+        y_now, y_prev = column_year(years[i]), column_year(years[i - 1])
+        if y_now is None or y_prev is None or y_now - y_prev != 1:
+            continue
         growth = pct(values[i], values[i - 1])
         if growth is not None and (best_pct is None or growth > best_pct):
             best_year = years[i]
             best_pct = growth
     return best_year, best_pct
+
+
+def cagr_over(years, values, n):
+    """CAGR over exactly n years of 12-month columns; None if the span isn't exactly n years."""
+    if len(years) <= n:
+        return None
+    end_year, start_year = column_year(years[-1]), column_year(years[-1 - n])
+    if end_year is None or start_year is None or end_year - start_year != n:
+        return None
+    return cagr(values[-1], values[-1 - n], n)
 
 
 # ---------- section 2: trajectory ----------
@@ -219,10 +244,10 @@ def build_trajectory(c, finance):
         if len(years) > n:
             end, start = years[-1], years[-1 - n]
             span = start + " to " + end
-            metrics.append(metric(sales_label + " CAGR " + str(n) + "y", cagr(sales[-1], sales[-1 - n], n), "%", span, "profit_loss", sales_row, span, url))
+            metrics.append(metric(sales_label + " CAGR " + str(n) + "y", cagr_over(years, sales, n), "%", span, "profit_loss", sales_row, span, url))
             if finance:
-                metrics.append(metric("NII CAGR " + str(n) + "y", cagr(nii[-1], nii[-1 - n], n), "%", span, "profit_loss", "Revenue - Interest", span, url))
-            metrics.append(metric("Profit CAGR " + str(n) + "y", cagr(profit[-1], profit[-1 - n], n), "%", span, "profit_loss", "Net Profit", span, url))
+                metrics.append(metric("NII CAGR " + str(n) + "y", cagr_over(years, nii, n), "%", span, "profit_loss", "Revenue - Interest", span, url))
+            metrics.append(metric("Profit CAGR " + str(n) + "y", cagr_over(years, profit, n), "%", span, "profit_loss", "Net Profit", span, url))
         else:
             metrics.append(metric(sales_label + " CAGR " + str(n) + "y", None, "%", "needs " + str(n + 1) + " years", "profit_loss", sales_row, NA, url))
             if finance:
@@ -245,16 +270,16 @@ def build_trajectory(c, finance):
         metrics.append(metric("One-year " + sales_label.lower() + " jump", jump_pct, "%", fy_label(jump_year), "profit_loss", sales_row, jump_year, url))
 
     # takeaway
-    s5 = cagr(sales[-1], sales[-6], 5) if len(years) > 5 else None
-    p5 = cagr(profit[-1], profit[-6], 5) if len(years) > 5 else None
-    s3 = cagr(sales[-1], sales[-4], 3) if len(years) > 3 else None
-    p3 = cagr(profit[-1], profit[-4], 3) if len(years) > 3 else None
+    s5 = cagr_over(years, sales, 5)
+    p5 = cagr_over(years, profit, 5)
+    s3 = cagr_over(years, sales, 3)
+    p3 = cagr_over(years, profit, 3)
     horizon, s, p = (5, s5, p5) if s5 is not None else (3, s3, p3)
     parts = []
     if s is not None:
         parts.append(sales_label + " grew " + str(s) + "% a year over " + str(horizon) + " years")
         if finance and len(years) > horizon:
-            n_cagr = cagr(nii[-1], nii[-1 - horizon], horizon)
+            n_cagr = cagr_over(years, nii, horizon)
             if n_cagr is not None:
                 parts.append("NII " + str(n_cagr) + "% a year")
         if p is not None:

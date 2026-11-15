@@ -702,6 +702,9 @@ function CashBars({ series }) {
 function Sources({ transcripts, financials }) {
   return (
     <div className="divide-y divide-slate-100 rounded-2xl bg-white ring-1 ring-slate-200 dark:divide-slate-800 dark:bg-slate-900 dark:ring-slate-800">
+      {transcripts.note && (
+        <div className="px-4 py-2.5 text-sm text-slate-600 dark:text-slate-300">{transcripts.note}</div>
+      )}
       {transcripts.transcripts.map((t) => (
         <div key={t.url} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
           <div className="min-w-0">

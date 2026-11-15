@@ -39,7 +39,8 @@ from pdf_text import get_pdf_path
 
 DOCS_CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "cache", "docs")
 QUARTERS_WANTED = 4
-MAX_LINKS_TRIED = 10          # screener links looked at per company (each is cached after once)
+MAX_AGE_MONTHS = 15           # 5 quarters: nothing older is ever treated as current guidance
+MAX_LINKS_TRIED = 14          # screener links looked at per company (each is cached after once)
 MIN_CALL_AGE_DAYS = 30        # a quarter is "expected" only once its call has likely happened
 SCANNED_CHARS_PER_PAGE = 200  # below this the PDF has no useful text layer
 MIN_TRANSCRIPT_CHARS = 8000   # a 1-page "transcript is on our website" letter is not a transcript
@@ -153,21 +154,44 @@ def detect_quarter(text):
             quarter_end = quarter_end_from_fy(int(m.group(1)), int(m.group(2)))
             how = "Qn FYyy tag"
 
-    # 3. the call date: "held on (Thursday,) 29th October 2026"
-    call_date = None
-    m = re.search(r"held\s+on\s+(?:[a-z]+day,?\s+)?" + DATE_PATTERN, low)
-    if m:
-        call_date = parse_date_match(m)
-    if call_date is None:
-        # "Earnings Conference Call October 08, 2026" / "Transcript Date: July 29, 2026"
-        m = re.search(r"(?:conference call|earnings call|transcript)[^.]{0,40}?" + DATE_PATTERN, low)
-        if m:
-            call_date = parse_date_match(m)
-
+    # 3. the call date (never the quarter end itself: see detect_call_date)
+    call_date = detect_call_date(flat, quarter_end)
     if quarter_end is None and call_date is not None:
         quarter_end = previous_quarter_end(call_date)
         how = "call date"
     return quarter_end, call_date, how
+
+
+def detect_call_date(text, quarter_end=None, url=None):
+    """The date the call was held: "held on (Thursday,) 29th October 2026", else a
+    "Conference Call <date>" / "Transcript Date: <date>" line, else the file name
+    ("earnings-call-held-on-july-18-2026"), else the covering letter's date. A date
+    that is on or before the quarter end is not a call date (ICICIBANK's "earnings
+    call for the quarter ended June 30, 2026" used to be read as the call date)."""
+    low = " ".join(text.split()).lower()
+
+    def acceptable(d):
+        return d is not None and (quarter_end is None or d > quarter_end)
+
+    m = re.search(r"held\s+on\s+(?:[a-z]+day,?\s+)?" + DATE_PATTERN, low)
+    if m and acceptable(parse_date_match(m)):
+        return parse_date_match(m)
+    for m in re.finditer(r"(?:conference call|earnings call|transcript)[^.]{0,40}?" + DATE_PATTERN, low):
+        d = parse_date_match(m)
+        if acceptable(d):
+            return d
+    if url:
+        name = url.lower().replace("%20", " ").replace("-", " ").replace("_", " ")
+        m = re.search(DATE_PATTERN, name)
+        if m and acceptable(parse_date_match(m)):
+            return parse_date_match(m)
+    # the covering letter's own date, in its first lines (filed within days of the call)
+    head = low[:800]
+    for m in re.finditer(DATE_PATTERN, head):
+        d = parse_date_match(m)
+        if acceptable(d) and quarter_end is not None and (d - quarter_end).days <= 90:
+            return d
+    return None
 
 
 def detect_quarter_llm(text):
@@ -248,6 +272,8 @@ def process_document(url):
     if quarter_end is None and not doc["scanned"]:
         quarter_end, call_date = detect_quarter_llm(head)
         how = "llm" if quarter_end else None
+    if quarter_end is not None and (call_date is None or call_date <= quarter_end):
+        call_date = detect_call_date(head, quarter_end, url)      # also tries the file name
     doc["quarter_end"] = quarter_end.isoformat() if quarter_end else None
     doc["quarter"] = quarter_label(quarter_end) if quarter_end else None
     doc["call_date"] = call_date.isoformat() if call_date else None
@@ -261,6 +287,28 @@ def process_document(url):
 def get_pages(url):
     """The page texts of a processed document ([] if it failed)."""
     return process_document(url).get("pages", [])
+
+
+def refresh_call_dates():
+    """Maintenance: re-read the call date of every cached document whose date is missing
+    or equals its quarter end, from the cached pages (no download, no LLM)."""
+    fixed = 0
+    for path in os.listdir(DOCS_CACHE_DIR):
+        full = os.path.join(DOCS_CACHE_DIR, path)
+        with open(full, encoding="utf-8") as f:
+            doc = json.load(f)
+        if "pages" not in doc or not doc.get("quarter_end"):
+            continue
+        quarter_end = date.fromisoformat(doc["quarter_end"])
+        if doc.get("call_date") and date.fromisoformat(doc["call_date"]) > quarter_end:
+            continue
+        new = detect_call_date("\n".join(doc["pages"][:3]), quarter_end, doc["url"])
+        doc["call_date"] = new.isoformat() if new else None
+        with open(full, "w", encoding="utf-8") as f:
+            json.dump(doc, f)
+        fixed = fixed + 1
+        print("   call date ->", doc["call_date"], "for", doc.get("quarter"), doc["url"][-60:])
+    return fixed
 
 
 # ---------- the NSE fallback ----------
@@ -283,6 +331,14 @@ def nse_transcript_links(ticker, quarter_end):
 
 
 # ---------- putting it together ----------
+
+def label_month(period_text):
+    """Screener's concall label 'Oct 2026' -> date(2026, 10, 1); None if unreadable."""
+    try:
+        return datetime.strptime(period_text or "", "%b %Y").date()
+    except ValueError:
+        return None
+
 
 def days_after_quarter(entry):
     """How many days after its quarter end a call was held (a missing date ranks last;
@@ -342,13 +398,18 @@ def get_transcripts(ticker, n=QUARTERS_WANTED, nse_fallback=True):
             return
         found[key] = entry
 
-    # 1. screener's links, newest first, until the wanted quarters are covered
+    # 1. every screener link inside the window, newest first (not "until covered": a quarter's
+    # results call can sit below a later analyst-day document, and the dedupe must see both)
     tried = 0
+    oldest_wanted = min(wanted)
     for item in company["documents"]["concalls"]:
-        if all(q.isoformat() in found for q in wanted) or tried >= MAX_LINKS_TRIED:
+        if tried >= MAX_LINKS_TRIED:
             break
         if not item.get("transcript"):
             continue
+        label_date = label_month(item.get("period"))
+        if label_date is not None and label_date < oldest_wanted:
+            break                      # screener's list is newest first: the rest is older
         tried = tried + 1
         consider(item["transcript"], "screener", item.get("period"))
 
@@ -366,8 +427,19 @@ def get_transcripts(ticker, n=QUARTERS_WANTED, nse_fallback=True):
             missing.append({"quarter": quarter_label(q), "quarter_end": q.isoformat(),
                             "reason": "no transcript on screener or NSE"})
 
+    # only the wanted quarters count: a company with no recent calls must not be judged on
+    # 2022-2025 documents (COALINDIA's links went back four years)
+    wanted_keys = set(q.isoformat() for q in wanted)
+    for key in list(found):
+        if key not in wanted_keys:
+            rejected.append({"url": found[key]["url"], "source": found[key]["source"], "screener_label": found[key]["screener_label"],
+                             "reason": found[key]["quarter"] + " is outside the last " + str(n) + " quarters"})
+            del found[key]
     transcripts = [found[k] for k in sorted(found, reverse=True)][:n]
-    return {"ticker": ticker, "name": company["name"], "transcripts": transcripts, "missing": missing,
+    note = None
+    if not transcripts:
+        note = "No earnings-call transcripts in the last " + str(MAX_AGE_MONTHS) + " months on screener or NSE."
+    return {"ticker": ticker, "name": company["name"], "transcripts": transcripts, "missing": missing, "note": note,
             "rejected": rejected, "timings": {"seconds": round(time.time() - started, 1), "downloads": downloads,
                                               "links_tried": tried}}
 

@@ -110,33 +110,54 @@ EVIDENCE (what was actually reported later; each with its source):
 
 ARITHMETIC (computed in Python, trust the numbers): {comparison}
 
-Write the verdict for this metric AS IT STANDS TODAY: judge the most recent promise that has evidence
-(mention earlier outcomes in the sentence). Pick EXACTLY one of: met, missed, partly, on track, behind, pending, can't tell.
-Cite only numbers that appear in PROMISES or EVIDENCE above, with their source.
-- "met"/"missed"/"partly" only if the promise's period is over (see "period over" above).
-- "on track"/"behind" when the period is still running and there is interim evidence.
-- "pending" when there is no later evidence yet. "can't tell" when the promise or evidence is too loose to compare.
-- A promise with an open-ended period ("medium term") can be "on track", "behind" or "can't tell", never "missed".
-Then write ONE sentence (max 45 words) that cites the promise (call quarter and page) AND the evidence
-(call quarter and page, or the screener table and column), including the numbers. If the target moved, say so.
+THE VERDICT IS ALREADY DECIDED BY THE ARITHMETIC: "{final_verdict}". Do not change it.
+Write ONE sentence (max 45 words) that explains that verdict, citing the promise (call quarter and page)
+AND the evidence (call quarter and page, or the screener table and column), with the numbers. If the
+target moved, say so. Cite only numbers that appear in PROMISES or EVIDENCE above. The sentence must
+agree with the verdict "{final_verdict}" (for "can't tell" or "pending", say why it cannot be judged yet).
 
-Return JSON: {{"verdict": "...", "sentence": "..."}}
+Return JSON: {{"verdict": "{final_verdict}", "sentence": "..."}}
 """
 
 
 # ---------- threads ----------
 
-def thread_key(metric, target_text=None):
+SEGMENT_WORDS = ["catering", "tourism", "ticketing", "internet", "rail neer", "segment", "division", "vertical",
+                 "international", "overseas", "domestic", "export", "subsidiary", "retail", "wholesale", "b2b", "b2c",
+                 "decorative", "industrial", "lighting", "cables", "wires", "e-auction", "fsa", "bfsi", "hospital",
+                 "pharmacy", "diagnostic", "online", "offline", "stores", "store", "franchise", "lounge"]
+
+
+def segment_of(metric, target_text, quote):
+    """A segment word in the metric, target or quote means the promise is about a part of the
+    company (IRCTC's catering 15%, tourism 20%), never comparable with company-level numbers."""
+    text = ((metric or "") + " " + (target_text or "") + " " + (quote or "")).lower()
+    for w in SEGMENT_WORDS:
+        if re.search(r"\b" + re.escape(w) + r"\b", text):
+            return w
+    return None
+
+
+def thread_key(metric, target_text=None, quote=None):
     low = (metric or "").lower()
     target = (target_text or "").lower()
     # "150-200 bps impact on margin" is a one-off headwind, not the margin target itself
     if "margin" in low and any(w in target for w in ("impact", "headwind", "drag", "hit", "benefit", "tailwind")):
         return "Margin impact (one-off)"
+    base = None
     for words, key in THREAD_RULES:
         for w in words:
             if w in low:
-                return key
-    return (metric or "Other").strip()
+                base = key
+                break
+        if base:
+            break
+    if base is None:
+        base = (metric or "Other").strip()
+    segment = segment_of(metric, target_text, quote)
+    if segment and base not in ("Capex / capacity", "People", "Net debt", "Capital return", "Pricing"):
+        return base + " · " + segment          # its own thread, no screener comparison
+    return base
 
 
 def period_end(period, call_quarter_end):
@@ -215,7 +236,7 @@ def build_threads(items, transcripts):
     quarter_ends = {t["quarter"]: datetime.strptime(t["quarter_end"], "%Y-%m-%d").date() for t in transcripts}
     threads = {}
     for item in items:
-        key = thread_key(item.get("metric"), item.get("target_text"))
+        key = thread_key(item.get("metric"), item.get("target_text"), item.get("quote"))
         call_end = quarter_ends.get(item["call_quarter"], latest_quarter_end)
         end = period_end(item.get("period"), call_end)
         promise = dict(item)
@@ -290,7 +311,7 @@ def actuals_from_transcript(company_name, transcript, metrics):
         if real_page is None:
             dropped = dropped + 1
             continue
-        actuals.append({"metric": thread_key(item.get("metric")), "metric_as_named": item.get("metric"),
+        actuals.append({"metric": thread_key(item.get("metric"), None, item.get("quote")), "metric_as_named": item.get("metric"),
                         "value_text": item.get("value_text"), "value_low": item.get("value_low"), "value_high": item.get("value_high"),
                         "unit": item.get("unit"), "period": item.get("period"), "quote": item.get("quote"), "page": real_page,
                         "speaker": item.get("speaker"), "call_quarter": transcript["quarter"], "call_date": transcript.get("call_date"),
@@ -299,6 +320,34 @@ def actuals_from_transcript(company_name, transcript, metrics):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=1)
     return result
+
+
+FORWARD_WORDS = re.compile(r"\b(will|would|should|shall|expect(s|ed|ing)?|estimat(e|ed|es|ing)|target(s|ed|ing)?|plan(s|ned|ning)?|"
+                           r"guidance|guid(e|ed|ing)|outlook|aim(s|ing)?|intend(s|ed)?|likely|going to|coming (year|quarter)|next (year|quarter)|"
+                           r"by (fy|march|end))\b", re.I)
+INVESTMENT_WORDS = re.compile(r"\b(invest(ment|ments|ed)? in|stake|acqui(re|red|sition)|equity|minority|jv|joint venture)\b", re.I)
+CAPEX_WORDS = re.compile(r"\b(capex|capital expenditure|capacity|plant|line|expansion)\b", re.I)
+
+
+def actual_is_usable(actual, call_quarter_end, promise_quotes):
+    """Python's filter on a reported figure. Returns (ok, reason)."""
+    quote = " ".join(str(actual.get("quote") or "").split()).lower()
+    # 1. its period must have ended by the call (an FY27 figure given on a Q2 FY27 call is a forecast)
+    end = period_end(actual.get("period"), call_quarter_end)
+    if end is not None and end > call_quarter_end:
+        return False, "period " + str(actual.get("period")) + " had not ended at that call"
+    # 2. not a promise quoted back as an actual
+    for pq in promise_quotes:
+        if pq and (pq in quote or quote in pq):
+            return False, "repeats a promise quote"
+    # 3. not forward-looking wording
+    m = FORWARD_WORDS.search(quote)
+    if m:
+        return False, "forward-looking wording ('" + m.group(0) + "')"
+    # 4. an investment or stake is not capex
+    if actual.get("metric", "").startswith("Capex") and INVESTMENT_WORDS.search(quote) and not CAPEX_WORDS.search(quote):
+        return False, "an investment, not capex"
+    return True, ""
 
 
 # ---------- actuals from screener (only matching definitions) ----------
@@ -457,8 +506,11 @@ def compare(promise, evidence):
 
 # ---------- the verdict (stronger model) ----------
 
+VERDICT_VERSION = "v2"     # v2 (15 Nov): Python's verdict is final; the model only writes the sentence
+
+
 def verdict_cache_path(ticker, key):
-    return os.path.join(PROMISES_CACHE_DIR, "verdict_" + hashlib.sha1((ticker + "|" + key + "|" + PROMPT_VERSION).encode("utf-8")).hexdigest() + ".json")
+    return os.path.join(PROMISES_CACHE_DIR, "verdict_" + hashlib.sha1((ticker + "|" + key + "|" + VERDICT_VERSION).encode("utf-8")).hexdigest() + ".json")
 
 
 def write_verdict(company_name, thread):
@@ -471,15 +523,34 @@ def write_verdict(company_name, thread):
         sentence = str(data.get("sentence", "")).strip()
     except (ValueError, AttributeError):
         verdict, sentence = "", ""
-    if verdict not in VERDICTS:
-        verdict = thread["python_verdict"]
-        sentence = fallback_sentence(thread)
+    # Python's verdict is final; the model only writes the sentence, and it must not contradict it
+    verdict = thread["python_verdict"]
     if thread["key"] == "Margin impact (one-off)":
         verdict = "can't tell"
-    # a promise with no finished period can never be "missed"
     if verdict == "missed" and not any(p["period_over"] for p in thread["promises"]):
         verdict = "behind"
+    if not sentence or sentence_contradicts(sentence, verdict):
+        sentence = fallback_sentence(thread)
     return verdict, sentence, model
+
+
+CONTRADICTION_WORDS = {
+    "met": ["missed", "behind", "not met", "fell short"],
+    "on track": ["missed", "behind", "fell short", "lagging"],
+    "partly": ["fully met", "exceeded"],
+    "missed": ["met", "on track", "achieved", "exceeded"],
+    "behind": ["on track", "met the", "achieved", "exceeded", "ahead"],
+    "pending": ["met", "missed", "on track", "behind", "achieved"],
+    "can't tell": ["met", "missed", "on track", "behind", "achieved", "exceeded"],
+}
+
+
+def sentence_contradicts(sentence, verdict):
+    low = " " + sentence.lower() + " "
+    for w in CONTRADICTION_WORDS.get(verdict, []):
+        if " " + w + " " in low or " " + w + "," in low or " " + w + "." in low:
+            return True
+    return False
 
 
 def verdict_prompt(company_name, thread):
@@ -512,8 +583,13 @@ def verdict_prompt(company_name, thread):
         movement = movement + "; NOT mentioned on the newest call (" + thread["newest_call"] + ")"
     comparison = "; ".join(p["call_quarter"] + " promise: " + p["comparison"]["python_verdict"] + " - " + p["comparison"]["detail"]
                            for p in thread["promises"])
+    final = thread["python_verdict"]
+    if thread["key"] == "Margin impact (one-off)":
+        final = "can't tell"
+    if final == "missed" and not any(p["period_over"] for p in thread["promises"]):
+        final = "behind"
     return VERDICT_PROMPT.format(company=company_name, metric=thread["metric"], promises="\n".join(promises_text),
-                                 movement=movement, evidence="\n".join(evidence_text), comparison=comparison)
+                                 movement=movement, evidence="\n".join(evidence_text), comparison=comparison, final_verdict=final)
 
 
 def thread_python_verdict(thread):
@@ -578,7 +654,7 @@ def build_scorecard(ticker, use_cache=True):
         empty = {v: 0 for v in VERDICTS}
         return {"ticker": ticker.upper(), "name": guidance["name"], "threads": [],
                 "scorecard": {"threads": 0, "promises": 0, "counts": empty,
-                              "credibility": "No earnings-call transcripts on screener or NSE for the last 5 quarters, so there is no management guidance to check."},
+                              "credibility": "No earnings-call transcripts in the last 15 months on screener or NSE, so there is no current management guidance to check."},
                 "actual_extraction": [], "transcripts": [], "tokens_this_run": {}, "seconds": round(time.time() - started, 1), "built_on": run_started}
     quarter_ends = {t["quarter"]: t["quarter_end"] for t in transcripts}
     threads = build_threads(guidance["items"], transcripts)
@@ -590,15 +666,24 @@ def build_scorecard(ticker, use_cache=True):
     metric_names = sorted(set(t["key"] for t in threads if t["key"] not in SCREENER_METRICS))
     actual_stats = []
     evidence_by_key = {t["key"]: [] for t in threads}
+    promise_quotes = [" ".join(str(p.get("quote") or "").split()).lower() for t in threads for p in t["promises"]]
     if metric_names:
         for transcript in sorted(transcripts, key=lambda x: x["quarter_end"]):
             result = actuals_from_transcript(guidance["name"], transcript, metric_names)
-            actual_stats.append({"quarter": result["quarter"], "extracted": result["extracted"], "verified": result["verified"], "dropped": result["dropped"]})
+            call_end = datetime.strptime(transcript["quarter_end"], "%Y-%m-%d").date()
+            filtered = []
             for a in result["actuals"]:
-                if a["metric"] in evidence_by_key:
-                    a["value"] = a.get("value_low") if a.get("value_low") is not None else a.get("value_high")
-                    a["period_end"] = quarter_ends.get(a["call_quarter"])      # reported on this call = the quarter just ended
-                    evidence_by_key[a["metric"]].append(a)
+                if a["metric"] not in evidence_by_key:
+                    continue
+                ok, reason = actual_is_usable(a, call_end, promise_quotes)
+                if not ok:
+                    filtered.append({"metric": a["metric"], "value_text": a.get("value_text"), "page": a.get("page"), "reason": reason})
+                    continue
+                a["value"] = a.get("value_low") if a.get("value_low") is not None else a.get("value_high")
+                a["period_end"] = quarter_ends.get(a["call_quarter"])      # reported on this call = the quarter just ended
+                evidence_by_key[a["metric"]].append(a)
+            actual_stats.append({"quarter": result["quarter"], "extracted": result["extracted"], "verified": result["verified"],
+                                 "dropped": result["dropped"], "filtered_by_rules": filtered})
     # screener rows only from a year before the oldest call (older history is not evidence for these promises)
     oldest_call = min(t["quarter_end"] for t in transcripts)
     cutoff = (datetime.strptime(oldest_call, "%Y-%m-%d").date() - timedelta(days=400)).isoformat()
