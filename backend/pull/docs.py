@@ -284,6 +284,19 @@ def nse_transcript_links(ticker, quarter_end):
 
 # ---------- putting it together ----------
 
+def days_after_quarter(entry):
+    """How many days after its quarter end a call was held (a missing date ranks last;
+    a call before the quarter end can't be the results call and ranks last too)."""
+    if not entry.get("call_date"):
+        return 10 ** 6
+    try:
+        gap = (datetime.strptime(entry["call_date"], "%Y-%m-%d").date()
+               - datetime.strptime(entry["quarter_end"], "%Y-%m-%d").date()).days
+    except (TypeError, ValueError):
+        return 10 ** 6
+    return gap if gap >= 0 else 10 ** 6
+
+
 def get_transcripts(ticker, n=QUARTERS_WANTED, nse_fallback=True):
     started = time.time()
     ticker = ticker.upper().strip()
@@ -314,12 +327,20 @@ def get_transcripts(ticker, n=QUARTERS_WANTED, nse_fallback=True):
                              + (" (scanned PDF)" if doc["scanned"] else "")})
             return
         key = doc["quarter_end"]
+        entry = {"quarter": doc["quarter"], "quarter_end": key, "call_date": doc["call_date"], "url": url,
+                 "n_pages": doc["n_pages"], "chars": doc["chars"], "scanned": doc["scanned"], "source": source,
+                 "detected_by": doc["detected_by"], "screener_label": label}
         if key in found:
-            rejected.append({"url": url, "source": source, "screener_label": label, "reason": "duplicate of " + doc["quarter"]})
+            # two documents for one quarter (e.g. the results call and a later analyst day that
+            # discusses the same quarter): keep the call held closest AFTER the quarter end
+            if days_after_quarter(entry) < days_after_quarter(found[key]):
+                rejected.append({"url": found[key]["url"], "source": found[key]["source"], "screener_label": found[key]["screener_label"],
+                                 "reason": "duplicate of " + doc["quarter"] + " (a call closer to the quarter end was found)"})
+                found[key] = entry
+            else:
+                rejected.append({"url": url, "source": source, "screener_label": label, "reason": "duplicate of " + doc["quarter"]})
             return
-        found[key] = {"quarter": doc["quarter"], "quarter_end": key, "call_date": doc["call_date"], "url": url,
-                      "n_pages": doc["n_pages"], "chars": doc["chars"], "scanned": doc["scanned"], "source": source,
-                      "detected_by": doc["detected_by"], "screener_label": label}
+        found[key] = entry
 
     # 1. screener's links, newest first, until the wanted quarters are covered
     tried = 0

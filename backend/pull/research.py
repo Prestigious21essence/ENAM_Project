@@ -24,6 +24,7 @@ Usage:  python pull\\research.py TCS ASIANPAINT        (build, print statuses)
 import json
 import os
 import re
+import sqlite3
 import sys
 import threading
 import time
@@ -50,15 +51,27 @@ _building = set()               # tickers with a build thread running right now
 # ---------- DB ----------
 
 def now_text():
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    """ISO 8601 with the server's UTC offset, so the app can show it in the viewer's local time."""
+    return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
 def save_stage(ticker, stage, status, data=None):
-    conn = get_conn()
-    conn.execute("INSERT OR REPLACE INTO research (ticker, stage, status, json, updated_at) VALUES (?, ?, ?, ?, ?)",
-                 (ticker, stage, status, json.dumps(data, ensure_ascii=False, default=str) if data is not None else None, now_text()))
-    conn.commit()
-    conn.close()
+    """Write one stage row. Several build threads share the SQLite file, so a locked
+    database is retried a few times rather than losing the write (a lost "done" left
+    a stage frozen at "running" while the thread died: seen with 3 tickers at once)."""
+    payload = json.dumps(data, ensure_ascii=False, default=str) if data is not None else None
+    for attempt in range(5):
+        try:
+            conn = get_conn()
+            conn.execute("INSERT OR REPLACE INTO research (ticker, stage, status, json, updated_at) VALUES (?, ?, ?, ?, ?)",
+                         (ticker, stage, status, payload, now_text()))
+            conn.commit()
+            conn.close()
+            return
+        except sqlite3.OperationalError as e:
+            print("   DB busy saving", ticker, stage, "(attempt", attempt + 1, "):", str(e)[:60])
+            time.sleep(1 + attempt)
+    print("   could not save", ticker, stage, status, "after 5 attempts")
 
 
 def load_stages(ticker):
@@ -72,10 +85,14 @@ def load_stages(ticker):
 
 
 def minutes_since(text):
+    """Minutes since a stored timestamp (ISO with offset, or the older naive 'YYYY-MM-DD HH:MM:SS')."""
     try:
-        return (datetime.now() - datetime.strptime(text, "%Y-%m-%d %H:%M:%S")).total_seconds() / 60
+        when = datetime.fromisoformat(text)
     except (TypeError, ValueError):
         return 1e9
+    if when.tzinfo is None:
+        return (datetime.now() - when).total_seconds() / 60
+    return (datetime.now().astimezone() - when).total_seconds() / 60
 
 
 # ---------- quota ----------
@@ -152,7 +169,13 @@ def build_research(ticker, stages=None, force=False):
         if not force and not stage_needs_run(info):
             statuses[stage] = info["status"]
             continue
-        statuses[stage] = run_stage(ticker, stage, company["name"])
+        try:
+            statuses[stage] = run_stage(ticker, stage, company["name"])
+        except Exception as e:              # a build thread must never die quietly
+            print("  ", ticker, stage, "-> unexpected:", repr(e)[:120])
+            save_stage(ticker, stage, "error", {"message": "The AI service was busy or unreachable. Reopen this page in about 10 minutes and this part is retried.",
+                                                "detail": repr(e)[:200]})
+            statuses[stage] = "error"
         if statuses[stage] == "waiting_quota":
             # the stages after this one need the LLM too: mark them so the client knows
             for later in STAGES[STAGES.index(stage) + 1:]:

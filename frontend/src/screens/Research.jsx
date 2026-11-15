@@ -30,6 +30,39 @@ function verdictStyle(verdict) {
   return VERDICT_STYLE[verdict] || VERDICT_STYLE.pending
 }
 
+// The API sends ISO 8601 with the server's offset (older rows: a naive local time); show the viewer's local time.
+function localTime(text) {
+  const d = new Date(text)
+  if (Number.isNaN(d.getTime())) return text.slice(0, 16)
+  return d.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+}
+
+// Tile labels short enough for a half-width tile on a phone
+const SHORT_LABELS = {
+  'Operating margin (OPM)': 'OPM',
+  'Net profit (PAT)': 'PAT',
+  'Net interest income': 'NII',
+  'Net worth (equity + reserves)': 'Net worth',
+  'Debt / equity': 'Debt/equity',
+  'Cash conversion cycle': 'Cash cycle',
+  'Margin direction (OPM, 3 yrs)': 'OPM trend, 3y',
+  'Latest OPM': 'OPM',
+  'Assets / net worth (leverage)': 'Leverage',
+  'CFO / EBITDA (screener)': 'CFO/EBITDA',
+  'Financing margin': 'Fin. margin',
+}
+function shortLabel(label) {
+  if (SHORT_LABELS[label]) return SHORT_LABELS[label]
+  return label
+    .replace('Interest earned', 'Int. earned')
+    .replace(', cumulative 5 yrs', ' 5y')
+    .replace(', cumulative 4 yrs', ' 4y')
+    .replace(', cumulative 3 yrs', ' 3y')
+    .replace('Free cash flow', 'FCF')
+    .replace('One-year revenue jump', 'Revenue jump')
+    .replace('One-year interest earned jump', 'Int. earned jump')
+}
+
 function formatValue(value, unit) {
   if (value === null || value === undefined || value === 'n/a') return 'n/a'
   if (typeof value !== 'number') return String(value)
@@ -248,7 +281,7 @@ function Header({ ticker, data, financials }) {
       </div>
       <p className="text-sm text-slate-600 dark:text-slate-300">{data.name || (financials && financials.name) || ''}</p>
       <p className="text-xs text-slate-400">
-        {data.as_of ? 'As of ' + data.as_of.slice(0, 16) : ''}
+        {data.as_of ? 'As of ' + localTime(data.as_of) : ''}
         {data.status === 'building' ? ' · ' + data.progress : ''}
       </p>
     </header>
@@ -574,7 +607,7 @@ function NumbersCard({ section, onSource }) {
             onClick={() => onSource({ kind: 'screener', label: m.label, value: formatValue(m.value, m.unit), period: m.period, table: m.source.table, row: m.source.row, column: m.source.column, url: m.source.url })}
             className="rounded-xl bg-slate-50 px-2.5 py-2 text-left dark:bg-slate-800/60"
           >
-            <div className="truncate text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">{m.label}</div>
+            <div className="truncate text-[10px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400" title={m.label}>{shortLabel(m.label)}</div>
             <div className="tabular text-sm font-semibold leading-tight">{formatValue(m.value, m.unit)}</div>
             <div className="text-[10px] text-slate-400">{m.period}</div>
           </button>

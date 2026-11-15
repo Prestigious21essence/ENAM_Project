@@ -5,7 +5,8 @@ DB_PATH = os.path.join(os.path.dirname(__file__), "data", "finn.db")
 
 
 def get_conn():
-    conn = sqlite3.connect(DB_PATH)
+    # several research builds and the API read/write at once: wait for a lock instead of failing
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS prices (
             symbol TEXT, date TEXT,

@@ -46,9 +46,9 @@ PROMISES_CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "d
 # 00:20: 3.6-flash's free quota is only 20 requests per DAY (quotaId GenerateRequestsPerDayPerProjectPerModel,
 # resets at midnight Pacific), and 3.5-flash ran out the same minute; llm.py marks them "out" and the
 # lite model finishes the run. The verdict's arithmetic is Python's anyway; the model writes the sentence.
-# 15 Nov 14:20: Mistral Large (free Experiment plan, no 20/day cap) goes FIRST; it is used only
-# when FALLBACK_API_KEY is set, otherwise llm.py skips straight to 3.6-flash.
-VERDICT_MODELS = ["mistral-large-latest", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"]
+# 15 Nov 18:20: Mistral dropped (no API key could be created on its free plan): Gemini only.
+# The fallback routing in llm.py stays and would activate if FALLBACK_API_KEY were ever set.
+VERDICT_MODELS = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"]
 VERDICTS = ["met", "missed", "partly", "on track", "behind", "pending", "can't tell"]
 PROMPT_VERSION = "v1"
 
@@ -462,6 +462,28 @@ def verdict_cache_path(ticker, key):
 
 
 def write_verdict(company_name, thread):
+    prompt = verdict_prompt(company_name, thread)
+    answer = call_llm(prompt, json_output=True, purpose="verdict", temperature=0, models=VERDICT_MODELS)
+    model = answer_model(prompt, models=VERDICT_MODELS)
+    try:
+        data = json.loads(answer)
+        verdict = str(data.get("verdict", "")).lower().strip()
+        sentence = str(data.get("sentence", "")).strip()
+    except (ValueError, AttributeError):
+        verdict, sentence = "", ""
+    if verdict not in VERDICTS:
+        verdict = thread["python_verdict"]
+        sentence = fallback_sentence(thread)
+    if thread["key"] == "Margin impact (one-off)":
+        verdict = "can't tell"
+    # a promise with no finished period can never be "missed"
+    if verdict == "missed" and not any(p["period_over"] for p in thread["promises"]):
+        verdict = "behind"
+    return verdict, sentence, model
+
+
+def verdict_prompt(company_name, thread):
+    """The exact prompt the verdict model sees (also used to find its cache entry)."""
     promises_text = []
     for p in thread["promises"]:
         promises_text.append("- " + p["call_quarter"] + " (page " + str(p["page"]) + ", " + str(p.get("speaker")) + "): target "
@@ -490,25 +512,8 @@ def write_verdict(company_name, thread):
         movement = movement + "; NOT mentioned on the newest call (" + thread["newest_call"] + ")"
     comparison = "; ".join(p["call_quarter"] + " promise: " + p["comparison"]["python_verdict"] + " - " + p["comparison"]["detail"]
                            for p in thread["promises"])
-    prompt = VERDICT_PROMPT.format(company=company_name, metric=thread["metric"], promises="\n".join(promises_text),
-                                   movement=movement, evidence="\n".join(evidence_text), comparison=comparison)
-    answer = call_llm(prompt, json_output=True, purpose="verdict", temperature=0, models=VERDICT_MODELS)
-    model = answer_model(prompt, models=VERDICT_MODELS)
-    try:
-        data = json.loads(answer)
-        verdict = str(data.get("verdict", "")).lower().strip()
-        sentence = str(data.get("sentence", "")).strip()
-    except (ValueError, AttributeError):
-        verdict, sentence = "", ""
-    if verdict not in VERDICTS:
-        verdict = thread["python_verdict"]
-        sentence = fallback_sentence(thread)
-    if thread["key"] == "Margin impact (one-off)":
-        verdict = "can't tell"
-    # a promise with no finished period can never be "missed"
-    if verdict == "missed" and not any(p["period_over"] for p in thread["promises"]):
-        verdict = "behind"
-    return verdict, sentence, model
+    return VERDICT_PROMPT.format(company=company_name, metric=thread["metric"], promises="\n".join(promises_text),
+                                 movement=movement, evidence="\n".join(evidence_text), comparison=comparison)
 
 
 def thread_python_verdict(thread):
@@ -568,6 +573,13 @@ def build_scorecard(ticker, use_cache=True):
         return None
     company = get_company(ticker)
     transcripts = guidance["transcripts"]
+    if not transcripts:
+        # a company that holds no earnings calls (e.g. MRF): nothing to check, and that is the finding
+        empty = {v: 0 for v in VERDICTS}
+        return {"ticker": ticker.upper(), "name": guidance["name"], "threads": [],
+                "scorecard": {"threads": 0, "promises": 0, "counts": empty,
+                              "credibility": "No earnings-call transcripts on screener or NSE for the last 5 quarters, so there is no management guidance to check."},
+                "actual_extraction": [], "transcripts": [], "tokens_this_run": {}, "seconds": round(time.time() - started, 1), "built_on": run_started}
     quarter_ends = {t["quarter"]: t["quarter_end"] for t in transcripts}
     threads = build_threads(guidance["items"], transcripts)
     for t in threads:
