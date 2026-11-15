@@ -93,6 +93,12 @@ export function getSettings() {
   return request('/settings')
 }
 
+// Pull side: the first call starts a background build and returns the numbers;
+// later calls return whatever is ready (poll while status is "building").
+export function getResearch(ticker) {
+  return request('/research/' + encodeURIComponent(ticker))
+}
+
 export function saveSettings(changes) {
   return request('/settings', {
     method: 'POST',

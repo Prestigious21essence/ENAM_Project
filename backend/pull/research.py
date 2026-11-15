@@ -116,7 +116,8 @@ def run_stage(ticker, stage, name):
             save_stage(ticker, stage, "waiting_quota", {"message": quota_message(), "detail": str(e)[:200]})
             return "waiting_quota"
         print("  ", ticker, stage, "-> error:", repr(e)[:120])
-        save_stage(ticker, stage, "error", {"message": "This stage failed and will be retried.", "detail": repr(e)[:200]})
+        save_stage(ticker, stage, "error", {"message": "The AI service was busy or unreachable. Reopen this page in about 10 minutes and this part is retried.",
+                                            "detail": repr(e)[:200]})
         return "error"
 
 
@@ -194,6 +195,18 @@ def is_building(ticker):
         return ticker.upper() in _building
 
 
+def needs_build(ticker):
+    """Is there any stage that should run now? (Polling a ticker whose stages are done, or
+    failed less than 10 minutes ago, must not start a thread.)"""
+    current = load_stages(ticker.upper().strip())
+    if not current:
+        return True
+    for stage in STAGES:
+        if stage_needs_run(current.get(stage)):
+            return True
+    return False
+
+
 # ---------- what the API returns ----------
 
 def progress_line(stages):
@@ -212,7 +225,7 @@ def progress_line(stages):
     elif waiting:
         parts.append("waiting for the daily LLM quota (" + ", ".join(waiting) + ")")
     elif errors:
-        parts.append("retrying " + ", ".join(errors))
+        parts.append("the AI service was busy for " + ", ".join(errors) + "; it retries on the next visit after 10 minutes")
     if not parts:
         parts.append("Starting...")
     return " - ".join(parts)

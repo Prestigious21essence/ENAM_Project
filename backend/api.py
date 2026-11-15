@@ -22,7 +22,7 @@ from db import get_conn
 from ingest.prices import alerts_for_range
 from push.digest import biggest_move, data_as_of, describe_alert, get_digest
 from push.events import build_events
-from pull.research import get_research, start_research, valid_ticker
+from pull.research import get_research, is_building, needs_build, start_research, valid_ticker
 
 PORTFOLIO_PATH = os.path.join(os.path.dirname(__file__), "data", "portfolio.json")
 
@@ -290,7 +290,9 @@ def research(ticker: str):
     if not valid_ticker(ticker):
         raise HTTPException(status_code=404, detail="not an NSE ticker: " + ticker)
     result = get_research(ticker)
-    if result is None or result["status"] not in ("done", "not_found"):
+    # start (or resume) a build only when some stage actually needs running and no thread is on it;
+    # a poll of a ticker whose stages are done or recently failed must not spin anything up
+    if result is None or (result["status"] not in ("done", "not_found") and needs_build(ticker) and not is_building(ticker)):
         try:
             known = start_research(ticker)
         except Exception as e:

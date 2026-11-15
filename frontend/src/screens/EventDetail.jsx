@@ -36,6 +36,18 @@ export default function EventDetail({ id, onBack, onOpen }) {
         <div className="space-y-6 px-4">
           <BigCard event={cardEvent} onOpen={onOpen} />
 
+          {/* push meets pull: from the filing to the company's track record */}
+          <a
+            href={'#/research/' + encodeURIComponent(event.symbol)}
+            className="flex items-center justify-between rounded-2xl bg-sky-50 px-4 py-3 text-sm ring-1 ring-sky-200 dark:bg-sky-950 dark:ring-sky-900"
+          >
+            <span>
+              <span className="font-semibold text-sky-900 dark:text-sky-100">Research {event.symbol} →</span>
+              <span className="block text-xs text-sky-800/80 dark:text-sky-200/80">Promised vs delivered, numbers, transcripts</span>
+            </span>
+            <span className="text-sky-700 dark:text-sky-300">⌕</span>
+          </a>
+
           {event.market_moves.length > 0 && (
             <section>
               <SectionTitle>Market around these filings</SectionTitle>

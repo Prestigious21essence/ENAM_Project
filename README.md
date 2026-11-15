@@ -38,7 +38,9 @@ Yahoo EOD prices ─────────────────────
   (company definitions, verified quotes) or screener where definitions match, Python decides
   whether the period is over and compares, the stronger model writes one cited verdict per
   thread, and a scorecard with a rule-based credibility line.
-- `frontend/` — React + Tailwind (Vite). Screens: Today, Alerts, Settings, event detail.
+- `frontend/` — React + Tailwind (Vite). Screens: Today, Alerts, Research (any NSE symbol:
+  promised-vs-delivered scorecard with tappable citations, numbers cards with an inline SVG
+  sparkline, sources; builds progressively), Settings, event detail (links to Research).
 - Models: Gemini Flash (cheap) with a fallback list; a model whose daily free quota runs out is
   skipped for the rest of the run, and text calls fall back to Mistral's free tier as a last
   resort (image reads of PDF pages stay on Gemini). Every LLM answer is cached on disk and

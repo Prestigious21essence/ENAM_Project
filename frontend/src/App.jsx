@@ -2,13 +2,16 @@ import { useEffect, useState } from 'react'
 import { onWakeChange } from './api'
 import Alerts from './screens/Alerts'
 import EventDetail from './screens/EventDetail'
+import Research from './screens/Research'
 import Settings from './screens/Settings'
 import Today from './screens/Today'
 
-// Tiny hash router: #/  #/alerts  #/settings  #/event/<id>
+// Tiny hash router: #/  #/alerts  #/research  #/research/<TICKER>  #/settings  #/event/<id>
 function readRoute() {
   const hash = window.location.hash.replace(/^#/, '') || '/'
   if (hash.startsWith('/event/')) return { screen: 'event', id: decodeURIComponent(hash.slice(7)) }
+  if (hash.startsWith('/research/')) return { screen: 'research', ticker: decodeURIComponent(hash.slice(10)).toUpperCase() }
+  if (hash === '/research') return { screen: 'research', ticker: null }
   if (hash === '/alerts') return { screen: 'alerts' }
   if (hash === '/settings') return { screen: 'settings' }
   return { screen: 'today' }
@@ -17,6 +20,7 @@ function readRoute() {
 const TABS = [
   { screen: 'today', label: 'Today', hash: '#/', icon: '◉' },
   { screen: 'alerts', label: 'Alerts', hash: '#/alerts', icon: '↯' },
+  { screen: 'research', label: 'Research', hash: '#/research', icon: '⌕' },
   { screen: 'settings', label: 'Settings', hash: '#/settings', icon: '⚙' },
 ]
 
@@ -53,6 +57,7 @@ export default function App() {
       {route.screen === 'today' && <Today onOpen={openEvent} />}
       {route.screen === 'alerts' && <Alerts onOpen={openEvent} onSettings={() => (window.location.hash = '#/settings')} />}
       {route.screen === 'settings' && <Settings />}
+      {route.screen === 'research' && <Research ticker={route.ticker} />}
       {route.screen === 'event' && <EventDetail id={route.id} onBack={goBack} onOpen={openEvent} />}
 
       <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
