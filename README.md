@@ -94,3 +94,17 @@ npm run dev                        # http://localhost:5173
   refreshed on a laptop and committed, because NSE may block cloud IPs and the free disk is
   reset on each deploy. `GET /health/sources` shows whether NSE/BSE are reachable from the server.
 - **Frontend:** Vercel, root directory `frontend`, env `VITE_API_URL=<Render URL>`.
+
+## Daily refresh (automatic)
+
+`.github/workflows/daily-refresh.yml` runs every weekday at **19:00 IST** (after market close) on
+GitHub Actions: it installs the backend, runs `python refresh.py` (prices → NSE filings → classify →
+results and management cards → events), cross-checks new results cards against screener, and, if
+`backend/data/finn.db` changed, commits it to `main`. Render redeploys from `main` by itself, so the
+app's brief moves to the new trading day without anyone touching it.
+
+- Needs one repository secret: `GEMINI_API_KEY` (Settings → Secrets and variables → Actions).
+- Run it by hand: **Actions → Daily refresh → Run workflow**.
+- Weekends and holidays simply find no new filings; the brief stays "as of" the last trading day.
+- Pull before working locally (`git pull`), since the job adds commits to `main`.
+
