@@ -40,7 +40,7 @@ from pull.guidance import find_quote
 from pull.promises import VERDICT_MODELS
 
 STORY_CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "cache", "story")
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = "v2"      # v2: a bullet's numbers must be in its own quote
 PPT_MAX_MONTHS = 15
 PPT_MAX_PAGES = 40
 AR_MAX_PAGES = 40
@@ -163,6 +163,22 @@ def labelled(pages):
 
 # ---------- snapshot ----------
 
+NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
+
+
+def numbers_covered(text, quote):
+    """Every number in the bullet text appears in the quote (commas ignored; 20,000 == 20000;
+    a number written in the quote as 2.5 billion / 20k counts when the digits match)."""
+    quote_digits = set(n.replace(",", "") for n in NUMBER.findall(quote))
+    quote_flat = quote.replace(",", "")
+    for n in NUMBER.findall(text):
+        plain = n.replace(",", "")
+        if plain in quote_digits or plain in quote_flat:
+            continue
+        return False
+    return True
+
+
 def build_snapshot(company_name, source):
     prompt = SNAPSHOT_PROMPT.format(company=company_name, kind=source["kind"], document=labelled(source["pages"]))
     answer = call_llm(prompt, json_output=True, purpose="snapshot", temperature=0)
@@ -186,6 +202,10 @@ def build_snapshot(company_name, source):
             page = 0
         real_page = find_quote(str(item.get("quote", "")), source["pages"], page)
         if real_page is None:
+            dropped = dropped + 1
+            continue
+        # every number in the bullet must be in its own verified quote (not from another page of the deck)
+        if not numbers_covered(text, str(item.get("quote", ""))):
             dropped = dropped + 1
             continue
         bullets.append({"text": text, "quote": item.get("quote"), "page": real_page, "url": source["url"],

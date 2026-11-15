@@ -11,6 +11,7 @@ Usage:  python push\\classify.py
 import json
 import os
 import random
+import re
 import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
@@ -180,11 +181,15 @@ def shorten(summary):
     like "Dr. " or "Mr. " don't end the sentence early."""
     if not summary or len(summary) <= 200:
         return summary
-    cut = summary.find(". ", 60)
-    if cut != -1:
-        summary = summary[:cut + 1]
+    # a sentence ends at ". " or ".Next" ("…2026.Further, a meeting…"), but not at an abbreviation
+    protected = re.sub(r"\b(Rs|Mr|Mrs|Ms|Dr|No|Ltd|Pvt|Inc|w\.e\.f|i\.e|e\.g|viz|Co)\.", lambda a: a.group(0).replace(".", "·"), summary)
+    m = re.compile(r"\.(?=\s|[A-Z])").search(protected, 60)
+    if m:
+        summary = summary[:m.start() + 1]
     if len(summary) > 200:
-        summary = summary[:197] + "..."
+        # never cut a word in half: back up to the last space
+        space = summary.rfind(" ", 100, 197)
+        summary = summary[:space if space != -1 else 197].rstrip(",;:-") + "…"
     return summary
 
 

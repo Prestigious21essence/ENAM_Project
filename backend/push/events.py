@@ -29,6 +29,7 @@ from db import get_conn
 from ingest.prices import alerts_for_range
 from push.classify import shorten
 from push.mgmt_change import seniority
+from push.summarize import money_in_crore
 
 PORTFOLIO_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "portfolio.json")
 GAP_DAYS = 10
@@ -49,6 +50,10 @@ DEFAULT_REASONS = {
     "pledging": "promoter pledge changed: a risk signal",
 }
 MINOR_FUND_RAISE_WORDS =["conversion of warrants", "exercise request"]
+# a court / tribunal / tax order that went the company's way is not "action against the company"
+FAVOURABLE_WORDS = ["in favour of the company", "in favor of the company", "favourable", "favorable", "set aside",
+                    "quashed", "allowed the appeal", "appeal allowed", "relief to the company", "ruled in favour",
+                    "dismissed the petition against", "stay on", "granted a stay"]
 
 
 def event_kind(category):
@@ -259,11 +264,14 @@ def judge_event(conn, event, settings):
             priority = MEDIUM
             reason = "conversion of warrants approved earlier"
 
+    elif event["type"] == "litigation" and has_any(text, FAVOURABLE_WORDS):
+        reason = "court / tax ruling in the company's favour"
+
     # Every top item says why it is at the top
     if priority == HIGH and not reason:
         reason = DEFAULT_REASONS.get(event["type"], "material filing")
 
-    headline = shorten(headline)      # NSE's own summaries can be a whole paragraph
+    headline = shorten(money_in_crore(headline))      # NSE's own summaries can be a whole paragraph; money in ₹ cr
     if len(event["members"]) > 1:
         headline = headline + " (" + str(len(event["members"])) + " filings)"
 

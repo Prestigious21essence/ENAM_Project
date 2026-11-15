@@ -207,6 +207,36 @@ def norm_unit(unit):
 NUMERIC_UNITS = ("%", "bps", "rs crore", "usd bn", "usd mn", "x")
 
 
+def period_bounds(period, call_quarter_end):
+    """(start, end) dates of a target's own period: FY27 = 1 Apr 2026 .. 31 Mar 2027,
+    H1 FY27 = Apr..Sep 2026, H2 FY27 = Oct 2026..Mar 2027, Q3 FY27 = Oct..Dec 2026,
+    'next quarter' = the quarter after the call. Open-ended ('medium term') -> (None, None)."""
+    end = period_end(period, call_quarter_end)
+    if end is None:
+        return None, None
+    text = (period or "").lower()
+    m = re.search(r"(h1|h2|q1|q2|q3|q4)?\s*fy\s*'?(\d{2,4})", text)
+    if m:
+        fy = int(m.group(2))
+        fy = fy + 2000 if fy < 100 else fy
+        part = m.group(1)
+        if part is None:
+            return date(fy - 1, 4, 1), end
+        if part == "h1":
+            return date(fy - 1, 4, 1), end
+        if part == "h2":
+            return date(fy - 1, 10, 1), end
+        quarter_starts = {"q1": date(fy - 1, 4, 1), "q2": date(fy - 1, 7, 1), "q3": date(fy - 1, 10, 1), "q4": date(fy, 1, 1)}
+        return quarter_starts[part], end
+    # "next quarter": the quarter that ends at `end` starts two months earlier
+    start_month = end.month - 2
+    start_year = end.year
+    if start_month <= 0:
+        start_month = start_month + 12
+        start_year = start_year - 1
+    return date(start_year, start_month, 1), end
+
+
 def movement_between(a, b):
     """How the target changed from promise a to the later promise b (same thread).
     Numbers are compared only when both targets are in the same numeric unit; otherwise
@@ -435,7 +465,11 @@ def compare(promise, evidence):
     end = promise.get("period_end")
     call_end = promise.get("call_quarter_end")
     target_unit = norm_unit(promise.get("unit"))
-    # evidence after the call, and within the period when there is one
+    # evidence after the call AND inside the target's own period: an FY27 target is judged
+    # only on FY27 quarters or the FY27 annual figure, never on FY26's; a period that has
+    # not started yet is pending; an open-ended target may use anything after the call
+    start, _ = period_bounds(promise.get("period"), datetime.strptime(call_end, "%Y-%m-%d").date()) if call_end else (None, None)
+    start_iso = start.isoformat() if start else None
     later = []
     for e in evidence:
         e_end = e.get("period_end")
@@ -443,10 +477,15 @@ def compare(promise, evidence):
             continue
         if end is not None and e_end > end:
             continue
+        if start_iso is not None and e_end < start_iso:
+            continue
         later.append(e)
     later.sort(key=lambda e: e.get("period_end") or "")
     if not later:
-        return {"python_verdict": "pending", "detail": "no later evidence yet" + (" (period over)" if over else ""), "used": []}
+        latest_known = max((e.get("period_end") or "" for e in evidence), default="")
+        if start_iso is not None and latest_known and latest_known < start_iso:
+            return {"python_verdict": "pending", "detail": "period " + str(promise.get("period")) + " has not started yet (starts " + start_iso + ")", "used": []}
+        return {"python_verdict": "pending", "detail": "no evidence inside the period yet" + (" (period over)" if over else ""), "used": []}
 
     # only evidence in the same unit can be compared; a target without a measurable unit can't be judged
     if target_unit not in NUMERIC_UNITS and target_unit != "count":
@@ -506,7 +545,7 @@ def compare(promise, evidence):
 
 # ---------- the verdict (stronger model) ----------
 
-VERDICT_VERSION = "v2"     # v2 (15 Nov): Python's verdict is final; the model only writes the sentence
+VERDICT_VERSION = "v3"     # v2: Python's verdict is final; v3: evidence must lie inside the target's period
 
 
 def verdict_cache_path(ticker, key):

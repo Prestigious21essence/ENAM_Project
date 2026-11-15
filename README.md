@@ -1,11 +1,33 @@
 # FINN — Financial Investment Agent
 
 A mobile-first investor app that filters corporate filings and end-of-day market data for a
-portfolio down to the few things that matter.
+portfolio down to the few things that matter, and researches any NSE company from primary
+sources only.
 
-**Push side (built):** a *morning brief* — the 1–3 events that matter as full cards (results
+**Live:** app https://enam-project.vercel.app · API https://finn-api-iqfg.onrender.com
+(free tiers: the first request after ~15 minutes idle takes up to a minute while the server wakes).
+
+**Push side:** a *morning brief* — the 1–3 events that matter as full cards (results
 with QoQ/YoY, leadership changes with bios), the rest as one-line rows, routine paperwork
 collapsed. Price/volume alerts are linked to the filings that preceded them.
+
+**Pull side:** the *Research* tab takes any NSE symbol. Numbers come back in about a second
+(screener tables), then the last five earnings calls are read: management's promises with
+verbatim quotes, a **promised-vs-delivered** scorecard (each target's history across calls,
+the reported actuals, one verdict per thread), a business snapshot from the latest investor
+presentation, and a bull-vs-bear case built only from FINN's own findings. Every citation is a
+tappable chip that opens the quote with its page and a link to the PDF.
+
+**How verification works.** Nothing an LLM says is shown without a check in Python. Every
+quote (promises, reported actuals, snapshot bullets, bull/bear citations) must appear verbatim
+on the cited PDF page, or it is dropped; a snapshot bullet's numbers must appear in its own
+quote. All arithmetic is Python's: QoQ/YoY, EBITDA, CAGR, debt/equity, CFO/PAT, and whether a
+promise was met (evidence must fall inside the target's own period, in the same unit; the
+model only writes the explaining sentence, which must agree). Results cards pass four
+accounting identities and are cross-checked against screener's quarterly table; management
+cards are checked against the verbs in the filing text; event one-liners must contain only
+numbers and names that occur in the filing. When the free LLM quota is used up, the numbers
+still show and the AI stages say so and resume later.
 
 ## How it works
 
