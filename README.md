@@ -38,6 +38,10 @@ Yahoo EOD prices ─────────────────────
   (company definitions, verified quotes) or screener where definitions match, Python decides
   whether the period is over and compares, the stronger model writes one cited verdict per
   thread, and a scorecard with a rule-based credibility line.
+- `backend/pull/snapshot.py` — the "story" stage: a business snapshot (max 5 bullets) from the latest
+  investor presentation, else the latest call's opening remarks, else the annual report, each bullet
+  with a verbatim quote verified in Python; and a bull-vs-bear case built only from FINN's own
+  evidence (numbers, verdicts, transcript quotes), where the model may point at evidence, not add to it.
 - `frontend/` — React + Tailwind (Vite). Screens: Today, Alerts, Research (any NSE symbol:
   promised-vs-delivered scorecard with tappable citations, numbers cards with an inline SVG
   sparkline, sources; builds progressively), Settings, event detail (links to Research).

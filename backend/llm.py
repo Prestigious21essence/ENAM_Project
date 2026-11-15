@@ -7,6 +7,8 @@ call_llm(prompt):
        for the rest of this run and is not asked again
   3. if every Gemini model failed and the call has no images, asks the
      second provider (Mistral free tier, OpenAI-compatible API) as the last fallback
+     (a caller can also name a Mistral model in `models`, e.g. "mistral-large-latest",
+     and it is routed there in that position; skipped when no FALLBACK_API_KEY)
   4. saves the answer to the cache and writes one line to the cost log
 
 .env keys:
@@ -102,11 +104,16 @@ def call_gemini(model, contents, config):
     return response.text, input_tokens, output_tokens
 
 
-def call_fallback(prompt, json_output, temperature):
+def is_fallback_model(model):
+    """Model names that live on the second provider (e.g. "mistral-large-latest")."""
+    return not model.startswith("gemini")
+
+
+def call_fallback(prompt, json_output, temperature, model=None):
     """One call to the second provider (OpenAI-compatible chat API, text only).
-    Returns (text, input_tokens, output_tokens)."""
+    model: a name on that provider (default FALLBACK_MODEL). Returns (text, input_tokens, output_tokens)."""
     body = {
-        "model": FALLBACK_MODEL,
+        "model": model or FALLBACK_MODEL,
         "messages": [{"role": "user", "content": prompt}],
     }
     if json_output:
@@ -182,13 +189,18 @@ def call_llm(prompt, json_output=False, purpose="", images=None, temperature=Non
 
     last_error = None
     answer = None
-    # Try every Gemini model that still has quota; if ALL are busy (happens at
-    # peak times), wait 20 s and go round once more. Models marked "out" (daily
-    # quota used up) are skipped, so a dead model costs nothing more today.
+    # Try every model in order that still has quota; if ALL are busy (happens at
+    # peak times), wait 20 s and go round once more. Gemini models marked "out"
+    # (daily quota used up) are skipped, so a dead model costs nothing more today.
+    # A non-Gemini name (e.g. "mistral-large-latest") is routed to the second
+    # provider, text-only, and only when its key is set.
     for round_number in range(2):
         available = []
         for model in models:
-            if model not in MODELS_OUT and not gemini_disabled():
+            if is_fallback_model(model):
+                if fallback_available() and not images:
+                    available.append(model)
+            elif model not in MODELS_OUT and not gemini_disabled():
                 available.append(model)
         if len(available) == 0:
             break
@@ -197,7 +209,10 @@ def call_llm(prompt, json_output=False, purpose="", images=None, temperature=Non
             time.sleep(20)
         for model in available:
             try:
-                text, input_tokens, output_tokens = call_gemini(model, contents, config)
+                if is_fallback_model(model):
+                    text, input_tokens, output_tokens = call_fallback(prompt, json_output, temperature, model)
+                else:
+                    text, input_tokens, output_tokens = call_gemini(model, contents, config)
                 answer = (model, text, input_tokens, output_tokens)
                 break
             except Exception as e:

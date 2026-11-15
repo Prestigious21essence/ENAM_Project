@@ -46,7 +46,9 @@ PROMISES_CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "d
 # 00:20: 3.6-flash's free quota is only 20 requests per DAY (quotaId GenerateRequestsPerDayPerProjectPerModel,
 # resets at midnight Pacific), and 3.5-flash ran out the same minute; llm.py marks them "out" and the
 # lite model finishes the run. The verdict's arithmetic is Python's anyway; the model writes the sentence.
-VERDICT_MODELS = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"]
+# 15 Nov 14:20: Mistral Large (free Experiment plan, no 20/day cap) goes FIRST; it is used only
+# when FALLBACK_API_KEY is set, otherwise llm.py skips straight to 3.6-flash.
+VERDICT_MODELS = ["mistral-large-latest", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"]
 VERDICTS = ["met", "missed", "partly", "on track", "behind", "pending", "can't tell"]
 PROMPT_VERSION = "v1"
 

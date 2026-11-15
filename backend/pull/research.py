@@ -5,6 +5,7 @@ Stages, in order (each one's result is saved as soon as it is ready):
   transcripts  last 5 concall transcripts, text per page (pull/docs.py)        seconds, no LLM
   guidance     management's promises with verified quotes (pull/guidance.py)   ~5 cheap-model calls
   promises     promised vs delivered scorecard (pull/promises.py)              ~5 cheap + ~8 stronger calls
+  story        business snapshot + bull vs bear, cited (pull/snapshot.py)      1 cheap + 1 stronger call
 
 Table `research` (ticker, stage, status, json, updated_at). Status per stage:
   pending | running | done | waiting_quota | error | not_found
@@ -35,9 +36,10 @@ from pull.docs import get_transcripts
 from pull.financials import build_numbers
 from pull.guidance import extract_guidance
 from pull.promises import build_scorecard
+from pull.snapshot import build_story
 
-STAGES = ["financials", "transcripts", "guidance", "promises"]
-LLM_STAGES = ["guidance", "promises"]
+STAGES = ["financials", "transcripts", "guidance", "promises", "story"]
+LLM_STAGES = ["guidance", "promises", "story"]
 RETRY_AFTER_MINUTES = 10        # don't re-attempt a waiting_quota / error stage on every poll
 TICKER_PATTERN = re.compile(r"^[A-Z0-9&\-]{1,20}$")
 
@@ -102,8 +104,10 @@ def run_stage(ticker, stage, name):
             data = extract_guidance(ticker)
             if data is not None:
                 data = {"ticker": data["ticker"], "name": data["name"], "items": data["items"], "stats": data["stats"]}
-        else:
+        elif stage == "promises":
             data = build_scorecard(ticker)
+        else:
+            data = build_story(ticker)
         if data is None:
             save_stage(ticker, stage, "not_found", {"message": ticker + " is not on screener"})
             return "not_found"
@@ -211,7 +215,7 @@ def needs_build(ticker):
 
 def progress_line(stages):
     ready = []
-    for stage, label in (("financials", "numbers"), ("transcripts", "transcripts"), ("guidance", "guidance"), ("promises", "scorecard")):
+    for stage, label in (("financials", "numbers"), ("transcripts", "transcripts"), ("guidance", "guidance"), ("promises", "scorecard"), ("story", "story")):
         if stages.get(stage, {}).get("status") == "done":
             ready.append(label)
     running = [s for s in STAGES if stages.get(s, {}).get("status") == "running"]

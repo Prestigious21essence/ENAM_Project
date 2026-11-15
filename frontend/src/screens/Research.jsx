@@ -163,6 +163,7 @@ function ResearchPage({ ticker }) {
   const financials = data && data.sections.financials
   const promises = data && data.sections.promises
   const transcripts = data && data.sections.transcripts
+  const story = data && data.sections.story
 
   return (
     <div className="pb-8">
@@ -184,6 +185,8 @@ function ResearchPage({ ticker }) {
 
           {data.status === 'error' && <CalmCard tone="rose" title="Could not reach the data source" text={data.progress} />}
 
+          {story && story.snapshot && story.snapshot.bullets.length > 0 && <SnapshotCard snapshot={story.snapshot} onCite={setSheet} />}
+
           <section>
             <SectionTitle>Promised vs delivered</SectionTitle>
             {promises ? (
@@ -192,6 +195,13 @@ function ResearchPage({ ticker }) {
               <StageState stage={data.stages.promises} guidance={data.stages.guidance} progress={data.progress} status={data.status} />
             )}
           </section>
+
+          {(story || promises) && (
+            <section>
+              <SectionTitle>Bull vs bear · from FINN's own evidence</SectionTitle>
+              {story ? <BullBear story={story} onCite={setSheet} /> : <StageState stage={data.stages.story} progress={data.progress} status={data.status} />}
+            </section>
+          )}
 
           {financials ? (
             <section>
@@ -320,6 +330,100 @@ function CalmCard({ tone, title, text }) {
     <div className={'rounded-2xl p-4 text-sm ring-1 ' + styles[tone]}>
       <div className="font-semibold">{title}</div>
       <p className="mt-1 text-xs opacity-80">{text}</p>
+    </div>
+  )
+}
+
+// ---------- story: snapshot and bull vs bear ----------
+
+function shortDoc(label) {
+  if (!label) return 'doc'
+  if (label.toLowerCase().startsWith('investor presentation')) return 'Presentation'
+  if (label.toLowerCase().startsWith('annual report')) return 'Annual report'
+  const m = label.match(/^(Q[1-4] FY\d\d)/)
+  return m ? m[1] + ' call' : label
+}
+
+function SnapshotCard({ snapshot, onCite }) {
+  return (
+    <article className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="text-sm font-bold tracking-tight">What the company does</h3>
+        <span className="truncate text-[11px] text-slate-400">{snapshot.source && snapshot.source.label}</span>
+      </div>
+      <ul className="mt-2 space-y-2">
+        {snapshot.bullets.map((b, i) => (
+          <li key={i} className="flex items-start gap-2 text-sm leading-snug">
+            <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
+            <span className="min-w-0">
+              {b.text}{' '}
+              <button
+                onClick={() => onCite({ kind: 'quote', title: 'Business snapshot', quote: b.quote, source: b.doc, page: b.page, url: b.url, target: b.text })}
+                className="ml-1 inline-block rounded-md bg-sky-50 px-1.5 py-0.5 align-middle text-[11px] font-semibold text-sky-800 ring-1 ring-sky-200 dark:bg-sky-950 dark:text-sky-200 dark:ring-sky-900"
+              >
+                {shortDoc(b.doc)} p.{b.page}
+              </button>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </article>
+  )
+}
+
+function CiteChip({ cite, onCite }) {
+  if (cite.kind === 'quote') {
+    return (
+      <button
+        onClick={() => onCite({ kind: 'quote', title: cite.title, quote: cite.quote, speaker: cite.speaker, quarter: cite.quarter, callDate: cite.callDate, page: cite.page, url: cite.url, target: cite.target })}
+        className="rounded-md bg-white/70 px-1.5 py-0.5 text-[11px] font-semibold text-slate-700 ring-1 ring-slate-200 dark:bg-slate-900/60 dark:text-slate-200 dark:ring-slate-700"
+      >
+        {cite.quarter} p.{cite.page}
+      </button>
+    )
+  }
+  return (
+    <button
+      onClick={() => onCite({ kind: 'screener', label: cite.label, value: cite.value, period: cite.period, table: cite.table, row: cite.row, column: cite.column, url: cite.url })}
+      className="rounded-md bg-white/70 px-1.5 py-0.5 text-[11px] font-semibold text-slate-700 ring-1 ring-slate-200 dark:bg-slate-900/60 dark:text-slate-200 dark:ring-slate-700"
+    >
+      {cite.table === 'scorecard' ? 'scorecard' : 'screener · ' + (cite.column === 'see metrics' ? cite.table.replace('_', ' ') : cite.column)}
+    </button>
+  )
+}
+
+function BullBear({ story, onCite }) {
+  const sides = [
+    { key: 'bull', title: 'Bull case', tone: 'bg-emerald-50 ring-emerald-200 dark:bg-emerald-950/60 dark:ring-emerald-900', dot: 'bg-emerald-500' },
+    { key: 'bear', title: 'Bear case', tone: 'bg-rose-50 ring-rose-200 dark:bg-rose-950/60 dark:ring-rose-900', dot: 'bg-rose-500' },
+  ]
+  return (
+    <div className="space-y-3">
+      {sides.map((side) => (
+        <article key={side.key} className={'rounded-2xl p-4 ring-1 ' + side.tone}>
+          <h3 className="text-sm font-bold tracking-tight">{side.title}</h3>
+          {story[side.key].length === 0 ? (
+            <p className="mt-1 text-xs text-slate-500">Not enough evidence for a {side.key} point.</p>
+          ) : (
+            <ul className="mt-2 space-y-2.5">
+              {story[side.key].map((p, i) => (
+                <li key={i} className="flex items-start gap-2 text-sm leading-snug">
+                  <span className={'mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ' + side.dot} />
+                  <div className="min-w-0">
+                    {p.text}
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {p.cites.map((c, j) => (
+                        <CiteChip key={j} cite={c} onCite={onCite} />
+                      ))}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </article>
+      ))}
+      <p className="text-[11px] text-slate-400">Built only from the numbers, verdicts and quotes above; the model could point at evidence, not add to it.</p>
     </div>
   )
 }
@@ -636,10 +740,12 @@ function QuoteSheet({ item }) {
     <div>
       <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{item.title}</div>
       <div className="mt-1 text-sm font-semibold">{item.target}</div>
-      <blockquote className="mt-3 border-l-2 border-sky-500 pl-3 text-sm leading-relaxed text-slate-800 dark:text-slate-100">“{item.quote}”</blockquote>
+      <blockquote className="mt-3 border-l-2 border-sky-500 pl-3 text-sm leading-relaxed text-slate-800 dark:text-slate-100">
+        “{String(item.quote || '').replace(/\s+/g, ' ').trim()}”
+      </blockquote>
       <div className="mt-3 text-xs text-slate-500">
-        <span className="font-semibold text-slate-700 dark:text-slate-300">{item.speaker || 'Management'}</span>
-        {' · ' + item.quarter + ' earnings call'}
+        <span className="font-semibold text-slate-700 dark:text-slate-300">{item.speaker || (item.source ? 'Company document' : 'Management')}</span>
+        {item.source ? ' · ' + item.source : ' · ' + item.quarter + ' earnings call'}
         {item.callDate ? ', ' + item.callDate : ''}
         {' · page ' + item.page}
       </div>
