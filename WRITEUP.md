@@ -32,7 +32,7 @@ FINN has one point of view: **an investor should open it, see what changed and w
 5. **I audited my own output.** A separate review pass re-checked everything against the sources: 154 figures, 103 derived ratios, ~240 quotes and all 26 management cards. It caught real errors (a CMD shown as "leaving" when he only gave up an additional charge; promises judged against the wrong year's numbers; 4-year-old calls used for a company with no recent transcripts). Each was fixed with a rule, not a prompt tweak, and the audit script ships in the repo.
 6. **Cost: rules first, cheap model for bulk, stronger model only for verdicts, three caches.** The whole build used 332 LLM calls (1.94M input / 118k output tokens): **about US$0.42 at list price, ₹0 actually spent** (free tier). One company's research is ~20 calls, about US$0.02–0.06. Re-runs cost nothing.
 7. **Designed for free-tier failure.** Gemini's free quota is per model per day (20/day on the strongest Flash). Exhausted models are skipped for the rest of the run, and research stages show "paused until the quota resets" while the numbers still render. Nothing returns an error page.
-8. **Built for a reviewer who opens it days later.** NSE works from the cloud server; BSE is blocked there (403). Filings are refreshed on my laptop and the database ships with the code, and every window is anchored to the data's "as of" time so the app never goes blank.
+8. **Built for a reviewer who opens it days later.** NSE works from the cloud server; BSE is blocked there (403). The database ships with the code, and **a GitHub Actions job refreshes it every weekday at 19:00 IST**. Only new filings go to the LLM, so already-checked classifications never drift, and Render redeploys on each update. Every window is anchored to the data's "as of" time, so the app never goes blank.
 
 ## What I deliberately left out
 
@@ -48,7 +48,7 @@ FINN has one point of view: **an investor should open it, see what changed and w
 - **An alert when a new call quietly lowers a target**, where push meets pull, plus a say-do score per management across years.
 - **A portfolio view:** which holdings' managements are slipping on guidance this quarter.
 - **Annual-report analytics** with the same verified-quote discipline.
-- **A scheduled server-side refresh on a paid model tier**, plus Telegram push for high-priority items.
+- **Telegram push for high-priority items**, and a paid model tier so the daily job never waits on the free quota.
 
 ## How I worked
 
