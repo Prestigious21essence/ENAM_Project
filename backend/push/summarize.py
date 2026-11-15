@@ -58,24 +58,49 @@ def is_vague(details):
 
 
 NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
+# capitalised words that are filing vocabulary, not names: a sentence may use them freely
+GENERIC_WORDS = set("""
+the this its for and with from has was were will after under between about regarding pursuant
+limited ltd company companies board directors director exchange exchanges regulation regulations sebi bse nse
+listing obligations disclosure requirements audited unaudited standalone consolidated financial results quarter
+quarterly half year ended ending press release investor investors presentation analysts analyst institutional
+meet meeting meetings call conference transcript monitoring agency report options option grant nomination
+remuneration committee key managerial personnel additional executive managing chief officer whole-time reserve
+bank india indian national stock securities shares share equity debentures debenture intimation intimates intimated
+schedule approval approved scheme employee employees plan esop profit loss tax revenue ebitda pat pbt crore crores
+lakh million billion rs inr usd mw gw kt mt annexure outcome update updates newspaper publication copy appointment
+appointed re-appointment reappointment resignation cessation designate chairman vice secretary compliance
+senior management general annual extraordinary ordinary special postal ballot notice
+january february march april may june july august september october november december
+monday tuesday wednesday thursday friday saturday sunday fy q1 q2 q3 q4 h1 h2 yoy qoq
+""".split())
 
 
 def verified_summary(summary, source_text):
-    """Every number and every capitalised name in the model's sentence must appear in the
-    filing text (numbers compared without commas); otherwise the sentence is not used."""
+    """Every number and every proper name in the model's sentence must appear in the filing text
+    (numbers compared without commas; generic filing words are not names); else the sentence is
+    not used."""
     if not summary:
         return False
     source = " ".join(source_text.split()).lower()
-    source_numbers = set(n.replace(",", "") for n in NUMBER.findall(source))
+    source_digits = source.replace(",", "")
     for n in NUMBER.findall(summary):
-        if n.replace(",", "") not in source_numbers and n.replace(",", "") not in source:
+        plain = n.replace(",", "")
+        if plain not in source_digits:
             return False
-    for name in re.findall(r"\b[A-Z][a-zA-Z&'\-]{2,}\b", summary):
-        if name.lower() in ("the", "this", "its", "for", "and", "with", "from", "has", "was", "were", "will", "after", "under", "between"):
+    # a name is a capitalised word in the MIDDLE of a sentence (one that starts a sentence,
+    # "They will…", "Senior management…", is just English)
+    for name in re.findall(r"(?<=[a-z0-9,;:)'\"\]] )[A-Z][a-zA-Z&'\-]{2,}\b", summary):
+        low = name.lower()
+        if low in GENERIC_WORDS or re.fullmatch(r"fy\d{2,4}|q[1-4]", low):
             continue
-        if name.lower() not in source:
+        if low not in source:
             return False
     return True
+
+
+VERIFY_PAGES = 12          # how much of the PDF the number/name check may look at
+VERIFY_CHARS = 60000
 
 
 def cleaned_subject(subject, details):
@@ -116,7 +141,8 @@ def summarize_vague_filings():
         sources = {}
         for row_id, symbol, subject, details, pdf_url in batch:
             pdf_text = " ".join(get_pdf_text(pdf_url, max_pages=2).split())[:PDF_CHARS]
-            sources[row_id] = (subject or "") + " " + (details or "") + " " + pdf_text
+            # the check may look much further into the filing than the model was shown
+            sources[row_id] = (subject or "") + " " + (details or "") + " " + " ".join(get_pdf_text(pdf_url, max_pages=VERIFY_PAGES).split())[:VERIFY_CHARS]
             prompt = prompt + "\n---\nid: " + row_id + "\ncompany: " + symbol + "\nsubject: " \
                 + subject + "\npdf text: " + pdf_text + "\n"
         try:

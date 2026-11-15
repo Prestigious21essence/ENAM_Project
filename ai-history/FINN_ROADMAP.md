@@ -625,9 +625,10 @@ Each prompt from the reviewer covers **one** task ID. Claude Code: do only that 
 | M9 | Robustness on unseen tickers + cost summary | Claude Code | Sun | ☑ (5 unseen tickers incl. a bank, a small-cap, a recent IPO and a no-calls company; 2 bugs fixed; cost table in the log) |
 | M10 | Business snapshot + bull/bear (cited) | Claude Code | Sun, after D4 | ☑ (5th stage "story"; every bullet cited and verified; 6 tickers pre-built) |
 | M9b | Correctness fixes from the reviewer's audit (management-card rules + verb check; research recency, actual filters, Python-final verdicts, segment threads, call dates, growth columns) | Claude Code | Sun evening | ☑ (all 11 tickers rebuilt; audit: 0 verdict differences, no transcript older than 15 months) |
-| F1 | AI history export into `ai-history/` | Claude Code + Shubhankur | Sun | ☐ |
-| F2 | `WRITEUP.md` + email text | Claude Code + reviewer | Sun | ☐ |
-| F3 | Final checks + send email | Shubhankur | Sun | ☐ |
+| F1 | AI history export into `ai-history/` | Claude Code + Shubhankur | Sun | ☑ (4 sessions as markdown; no share links by decision, `OTHER_AI_TOOLS.md` instead) |
+| F2 | `WRITEUP.md` + email text | Claude Code + reviewer | Sun | ☑ (`WRITEUP_FINAL.md` → `finn/WRITEUP.md`, pushed in `8467b3a`, tag `submission`) |
+| R1 | Refresh push data to today + check it (results vs screener, management rules, summary check, screenshots) | Claude Code | Sun night | ☑ (30 new filings to 13 Nov; 2 results cards, 4 management cards; 27/30 summaries verified; 149 events / 25 high; local commit, not pushed) |
+| F3 | Final checks + send email | Shubhankur | Sun | ☐ (push done; repo public, phone check, email left) |
 
 **Cut order if late:** M10 → M9 down to 1 ticker → M8 citations as plain links. **Never cut D4:** a demo that doesn't run is the worst outcome.
 

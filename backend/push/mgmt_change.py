@@ -38,8 +38,8 @@ MGMT_WORDS = ["appoint", "resign", "cessation", "cease", "retire", "succession",
 # also matches "Non-Executive Director". Board-level executives are "whole-time directors".
 TOP_ROLE_WORDS = ["managing director", "md ", "md&", "ceo", "chief executive", "cfo",
                   "chief financial", "chairman", "chairperson", "whole-time", "whole time"]
-# A CEO of one division/region/business is senior management, not the company's top job
-DIVISION_WORDS = ["division", "region", "ic head", "business", " - ", " – "]
+# A CEO of one division/region/business/complex is senior management, not the company's top job
+DIVISION_WORDS = ["division", "region", "ic head", "business", " - ", " – ", "complex", "unit", "plant", "segment", "vertical", "subsidiary"]
 
 PROMPT = """This is a stock-exchange filing by {company} about a change in its management or board.
 Use ONLY this text. List every person who joins, leaves, or changes role.
@@ -244,7 +244,12 @@ def apply_rules(changes, text):
         return [], ["correction of an earlier filing (\"may please be read as\"): no management change"]
     kept = []
     for change in changes:
-        name = change.get("name", "")
+        name = change.get("name") or ""
+        # no person, no role or no kind of change: the model found nothing real (e.g. a filing that
+        # merely authorises officers to decide materiality)
+        if not name.strip() or not (change.get("role") or "").strip() or change.get("change") not in ("joining", "leaving", "role_change", "reappointed"):
+            notes.append("dropped an entry with no name, role or change kind")
+            continue
         ctx = context_around(flat, name)
         own = sentences_with(flat, name)          # rules about the person use only their own sentences
         own_low = own.lower()
