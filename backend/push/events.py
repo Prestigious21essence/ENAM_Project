@@ -155,6 +155,23 @@ def all_mgmt_changes(conn, member_ids):
     return changes
 
 
+def people_headline(lead_changes, total):
+    """'<first change> + N more changes': whole phrases only, never cut mid-phrase.
+    The first change is the most senior person; the count covers everyone in the event."""
+    first = lead_changes[0]["headline"]
+    if len(first) > 150:
+        # keep the name and role, drop the trailing ", effective <date>" / reason detail
+        cut = first.find(", effective ")
+        if 20 < cut < 150:
+            first = first[:cut]
+        if len(first) > 150:
+            first = first[:first.rfind(" ", 60, 147)] + "…"
+    extra = total - 1
+    if extra <= 0:
+        return first
+    return first + " + " + str(extra) + (" more change" if extra == 1 else " more changes")
+
+
 def market_reaction(symbol, filed_at, settings):
     """Biggest price alert in the few trading days after a filing, or None."""
     start = filed_at[:10]
@@ -247,11 +264,11 @@ def judge_event(conn, event, settings):
                 if change["seniority"] == "top" and change.get("change") in ["joining", "leaving", "role_change"]:
                     top_changes.append(change)
             if len(top_changes) > 0:
-                headline = " | ".join(c["headline"] for c in top_changes[:2])
+                headline = people_headline(top_changes, len(changes))
                 reason = "top management change"
             else:
                 priority = MEDIUM
-                headline = " | ".join(c["headline"] for c in changes[:2])
+                headline = people_headline(changes, len(changes))
                 reason = "board / senior-management change or re-appointment, not a new CEO/MD/CFO/Chairman"
 
     elif event["type"] == "M&A" and priority == HIGH:
@@ -271,7 +288,8 @@ def judge_event(conn, event, settings):
     if priority == HIGH and not reason:
         reason = DEFAULT_REASONS.get(event["type"], "material filing")
 
-    headline = shorten(money_in_crore(headline))      # NSE's own summaries can be a whole paragraph; money in ₹ cr
+    if card_type != "management":
+        headline = shorten(money_in_crore(headline))      # NSE's own summaries can be a whole paragraph; money in ₹ cr
     if len(event["members"]) > 1:
         headline = headline + " (" + str(len(event["members"])) + " filings)"
 
