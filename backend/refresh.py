@@ -1,7 +1,7 @@
 """Daily job, end to end:
   1. prices        (Yahoo EOD -> SQLite)
   2. announcements (NSE, BSE fallback)
-  3. classify      (rules, then cheap LLM)
+  3. classify      (rules, then cheap LLM) -- NEW filings only (category IS NULL)
   4. results cards for new results filings
   5. management cards for new management-change filings
   6. one-line summaries for vague filings
@@ -15,6 +15,8 @@ are cached, so a second refresh on the same day costs (almost) no tokens.
 Usage:
     python refresh.py                 -> full refresh, digest for the last 24 h
     python refresh.py --no-fetch 45d  -> skip downloads, digest for the last 45 days
+    python refresh.py --reclassify-all -> also re-classify every old filing (manual only;
+                                          hand-set classifications are kept)
 """
 import json
 import os
@@ -60,7 +62,9 @@ def update_announcements():
 
 
 def update_classification():
-    results = classify_all()
+    # New filings only, unless asked: re-asking the LLM about old filings (no cache
+    # on GitHub) drifts audited classifications.
+    results = classify_all(reclassify_all="--reclassify-all" in sys.argv)
     print("  classified", len(results), "filings")
 
 

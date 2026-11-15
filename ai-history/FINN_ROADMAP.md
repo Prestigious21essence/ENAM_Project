@@ -628,6 +628,7 @@ Each prompt from the reviewer covers **one** task ID. Claude Code: do only that 
 | F1 | AI history export into `ai-history/` | Claude Code + Shubhankur | Sun | ☑ (4 sessions as markdown; no share links by decision, `OTHER_AI_TOOLS.md` instead) |
 | F2 | `WRITEUP.md` + email text | Claude Code + reviewer | Sun | ☑ (`WRITEUP_FINAL.md` → `finn/WRITEUP.md`, pushed in `8467b3a`, tag `submission`) |
 | R1 | Refresh push data to today + check it (results vs screener, management rules, summary check, screenshots) | Claude Code | Sun night | ☑ (30 new filings to 13 Nov; 2 results cards, 4 management cards; 27/30 summaries verified; 149 events / 25 high; local commit, not pushed) |
+| R2 | Auto-refresh drift fix: classify new filings only, restore audited DB, 3 targeted reclassifications | Claude Code | Sun night | ☑ (152 events / 25 high / 55 medium; no-cache refresh = 0 LLM calls, events identical; local commit) |
 | F3 | Final checks + send email | Shubhankur | Sun | ☐ (push done; repo public, phone check, email left) |
 
 **Cut order if late:** M10 → M9 down to 1 ticker → M8 citations as plain links. **Never cut D4:** a demo that doesn't run is the worst outcome.

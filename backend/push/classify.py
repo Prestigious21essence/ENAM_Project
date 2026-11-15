@@ -6,7 +6,11 @@
    LLM in batches, together with the start of the PDF text. LLM answers are
    cached per filing id, so each filing is sent to the LLM at most once.
 
-Usage:  python push\\classify.py
+Only filings with no category yet are classified; existing ones are never
+re-asked (the DB is the source of truth).
+
+Usage:  python push\\classify.py                    (new filings only)
+        python push\\classify.py --reclassify-all   (every filing; manual use)
 """
 import json
 import os
@@ -296,10 +300,23 @@ def classify_with_llm(items):
 
 # ---------- main ----------
 
-def classify_all():
+def classify_all(reclassify_all=False):
+    """Classify the filings that have no category yet (the new ones).
+
+    The database is the source of truth: an existing classification is never
+    re-asked, because the daily job on GitHub has no LLM cache and the model's
+    answers drift between runs. reclassify_all=True re-runs every filing
+    (manual use only); even then a hand-set one (classified_by = 'manual') is kept."""
     conn = get_conn()
-    rows = conn.execute(
-        "SELECT id, symbol, subject, details, pdf_url, summary FROM announcements").fetchall()
+    if reclassify_all:
+        rows = conn.execute(
+            "SELECT id, symbol, subject, details, pdf_url, summary FROM announcements "
+            "WHERE classified_by IS NULL OR classified_by != 'manual'").fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, symbol, subject, details, pdf_url, summary FROM announcements "
+            "WHERE category IS NULL").fetchall()
+    print("  filings to classify:", len(rows), "(all)" if reclassify_all else "(new only)")
 
     results = {}          # id -> (category, priority, classified_by, summary)
     llm_items = []
@@ -342,7 +359,10 @@ def classify_all():
 
 
 if __name__ == "__main__":
-    results = classify_all()
+    results = classify_all(reclassify_all="--reclassify-all" in sys.argv)
+    if not results:
+        print("Nothing new to classify (use --reclassify-all to re-run every filing).")
+        sys.exit(0)
 
     high = 0
     medium = 0
